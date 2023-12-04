@@ -74,8 +74,19 @@ class _FineTuneTrainer(TorchDistributedWorker):
 
     @staticmethod
     def get_model_sd(payload):
-        # TODO: Pull model from model registry based on payload parameters.
-        return payload.module.state_dict().copy()
+        from mlflow.tracking.client import MlflowClient
+        # Get runs where the param_hash mathes.
+        client = MlflowClient()
+        expname = payload.mlflow_expname
+        runs = client.search_runs(expname)
+        param_hash = payload.param_hash
+        runs = [r for r in runs if r.data.params['param_hash'] == param_hash]
+        # Get the latest run.
+        runs = sorted(runs, key=lambda x: x.info.start_time, reverse=True)
+        run = runs[0]
+        # Get the model from that run using mlflow.pytorch.load_state_dict
+        sd = mlflow.pytorch.load_state_dict(run.info.run_id)
+        return sd
 
     @staticmethod
     def ready(): return True

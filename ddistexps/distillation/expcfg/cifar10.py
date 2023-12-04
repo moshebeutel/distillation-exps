@@ -7,7 +7,7 @@ EXPERIMENTS = {
                 'num_workers': 8,
             },
             'gridgen': 'resnetgen',
-            'dedup_policy': 'version',  # 'ignore' or 'version' (default)
+            'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
         },
         'dataflow': {
             'data_set': 'CIFAR10',
@@ -21,7 +21,7 @@ EXPERIMENTS = {
             'name': ['CIFAR10ResNet56', 'ClipCIFAR10'],
         },
         'train_cfg': {
-            'num_epochs': [200],
+            'num_epochs': [30, 60],
             'batch_size_gpu': 128,
             'optim':[
                 {'name': 'adam', 'lr': 0.01, 'lr_scheduler': None,},
