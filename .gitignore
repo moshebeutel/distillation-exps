@@ -1,0 +1,9 @@
+*__pycache__*
+*.egg-info
+*.csv
+*.esy
+*.out
+*.ipynb_checkpoints*
+pyrightconfig.json
+notebooks/img/*
+*pretrained*
