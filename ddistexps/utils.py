@@ -100,7 +100,6 @@ def get_dataflow(args, world_size, engine='default'):
     if engine not in ['default', 'augmented']:
         raise ValueError(f"Invalid dataflow: {engine}")
     if engine in ['augmented']:
-        raise NotImplementedError("Augmented dataflow not implemented")
         enginecls = AugDataFlow
     dfctrl = get_persistent_actor(df_actor_name, enginecls, dataflow_args)
     return dfctrl

@@ -30,7 +30,7 @@ def default_transforms(mean, std, img_hw):
 
 
 class _TorchvisionTransforms:
-    def __init__(self, mean, std, img_dims, in_gpu_transform=False,
+    def __init__(self, mean, std, img_dims, in_gpu_transform=True,
                  transforms_dict=None):
         self.img_dims = img_dims
         self.mean = mean
@@ -56,7 +56,7 @@ class _TorchvisionTransforms:
 
 
 class BasicImageTransforms(_TorchvisionTransforms):
-    def __init__(self, in_gpu_transform=False):
+    def __init__(self, in_gpu_transform=True):
         # We will use the same for all image datasets. We'll retrain teachers if need be.
         mean, std = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
         img_dims = (3, 32, 32)
@@ -64,80 +64,80 @@ class BasicImageTransforms(_TorchvisionTransforms):
         super().__init__(mean, std, img_dims, in_gpu_transform,
                          transforms_dict=transforms_dict)
 
-# class _ImageNetTransforms:
-#     def __init__(self, mean, std, img_dims, batched=True):
-#         self.img_dims = img_dims
-#         self.mean = mean
-#         self.std = std
-#         self.batched = batched
-#         ret = self._transforms(mean, std, img_dims, batched)
-#         self.process_tr, self.process_val, self.process_ref = ret
-#
-#     def get_transform(self, split):
-#         """Returns a mapper function. (ray.data.dataset.map_batches(mapper))"""
-#         fn = None
-#         if split == 'train': fn = self.process_tr
-#         elif split == 'val': fn = self.process_val
-#         elif split == 'reftrain': fn = self.process_ref
-#         else: raise ValueError("Unknown split name: " + split)
-#         return fn
-#
-#     def _to_tensorx(self, x):
-#         x_ = T.functional.pil_to_tensor(x).float()
-#         return x_
-#
-#     def _transforms(self, mean, std, img_dims, batched=True):
-#         img_dims = img_dims[1:]
-#         resize_dims = img_dims
-#         trfn_train = T.Compose([
-#             T.ToPILImage(mode="RGB"),
-#             T.Resize(resize_dims, antialias=True),
-#             T.RandomResizedCrop(img_dims, antialias=True),
-#             T.RandomHorizontalFlip(),
-#             T.Lambda(self._to_tensorx),
-#             T.Normalize(mean, std),
-#         ])
-#         trfn_val = T.Compose([
-#             T.ToPILImage(mode="RGB"),
-#             T.Resize(resize_dims, antialias=None),
-#             T.CenterCrop(img_dims),
-#             T.Lambda(self._to_tensorx),
-#             T.Normalize(mean, std),
-#         ])
-#         def transform_rand(elem):
-#             imgbatch = elem['image']
-#             if batched is True:
-#                 x = torch.stack([trfn_train(img) for img in imgbatch])
-#             else:
-#                 x = trfn_train(imgbatch)
-#             elem['image'] = x
-#             return elem
-#
-#         def transform_val(elem):
-#             imgbatch = elem['image']
-#             if batched is True:
-#                 x = torch.stack([trfn_val(img) for img in imgbatch])
-#             else:
-#                 x = trfn_val(imgbatch)
-#             elem['image'] = x
-#             return elem
-#         transform_ref = transform_val
-#         return transform_rand, transform_val, transform_ref
-#
-#
-# class TinyImageNetTransforms(_ImageNetTransforms):
-#     def __init__(self, batched=True):
-#         mean = [0.48145466, 0.4578275, 0.40821073]
-#         std = [0.26862954, 0.26130258, 0.27577711]
-#         img_dims = (3, 64, 64)
-#         super().__init__(mean, std, img_dims, batched)
-#
-# class ImageNetTransforms(_ImageNetTransforms):
-#     def __init__(self, batched=True):
-#         mean = [0.48145466, 0.4578275, 0.40821073]
-#         std = [0.26862954, 0.26130258, 0.27577711]
-#         img_dims = (3, 224, 224)
-#         super().__init__(self, mean, std, img_dims, batched)
+class _ImageNetTransforms:
+    def __init__(self, mean, std, img_dims, batched=True):
+        self.img_dims = img_dims
+        self.mean = mean
+        self.std = std
+        self.batched = batched
+        ret = self._transforms(mean, std, img_dims, batched)
+        self.process_tr, self.process_val, self.process_ref = ret
+
+    def get_transform(self, split):
+        """Returns a mapper function. (ray.data.dataset.map_batches(mapper))"""
+        fn = None
+        if split == 'train': fn = self.process_tr
+        elif split == 'val': fn = self.process_val
+        elif split == 'reftrain': fn = self.process_ref
+        else: raise ValueError("Unknown split name: " + split)
+        return fn
+
+    def _to_tensorx(self, x):
+        x_ = T.functional.pil_to_tensor(x).float()
+        return x_
+
+    def _transforms(self, mean, std, img_dims, batched=True):
+        img_dims = img_dims[1:]
+        resize_dims = img_dims
+        trfn_train = T.Compose([
+            T.ToPILImage(mode="RGB"),
+            T.Resize(resize_dims, antialias=True),
+            T.RandomResizedCrop(img_dims, antialias=True),
+            T.RandomHorizontalFlip(),
+            T.Lambda(self._to_tensorx),
+            T.Normalize(mean, std),
+        ])
+        trfn_val = T.Compose([
+            T.ToPILImage(mode="RGB"),
+            T.Resize(resize_dims, antialias=None),
+            T.CenterCrop(img_dims),
+            T.Lambda(self._to_tensorx),
+            T.Normalize(mean, std),
+        ])
+        def transform_rand(elem):
+            imgbatch = elem['image']
+            if batched is True:
+                x = torch.stack([trfn_train(img) for img in imgbatch])
+            else:
+                x = trfn_train(imgbatch)
+            elem['image'] = x
+            return elem
+
+        def transform_val(elem):
+            imgbatch = elem['image']
+            if batched is True:
+                x = torch.stack([trfn_val(img) for img in imgbatch])
+            else:
+                x = trfn_val(imgbatch)
+            elem['image'] = x
+            return elem
+        transform_ref = transform_val
+        return transform_rand, transform_val, transform_ref
+
+
+class TinyImageNetTransforms(_ImageNetTransforms):
+    def __init__(self, batched=True):
+        mean = [0.48145466, 0.4578275, 0.40821073]
+        std = [0.26862954, 0.26130258, 0.27577711]
+        img_dims = (3, 64, 64)
+        super().__init__(mean, std, img_dims, batched)
+
+class ImageNetTransforms(_ImageNetTransforms):
+    def __init__(self, batched=True):
+        mean = [0.48145466, 0.4578275, 0.40821073]
+        std = [0.26862954, 0.26130258, 0.27577711]
+        img_dims = (3, 224, 224)
+        super().__init__(self, mean, std, img_dims, batched)
 
 
 # def get_clip_transform():

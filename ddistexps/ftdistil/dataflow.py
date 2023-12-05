@@ -1,54 +1,46 @@
 # Modify the dataflow to support shifts and custom augmentation.
 #
 from ddist.data import _DataFlowControl as DFC
-from ddist.data.preprocessors import BasicImageTransforms
+from ddist.data.preprocessors import _TorchvisionTransforms
 import torchvision.transforms.v2 as T
 import numpy as np
 import pandas as pd
 import ray
+import torch
 
-ALL_TRANSFORMS = {
-    'train': T.Compose([
-        T.RandomCrop(32, padding=4),
-        T.RandomHorizontalFlip(),
-        T.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-    'val': T.Compose([
-        T.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-    'reftrain': T.Compose([
-        T.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-
-    'noise_train':  T.Compose([
-        T.ColorJitter(contrast=0.5, brightness=1.0),
-        T.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-    'clip':  T.Compose([
-        T.RandomCrop(32, padding=4),
-        T.RandomHorizontalFlip(),
-    ]),
-    'noise_val': T.Compose([
-        # T.ToPILImage(),
-        T.ColorJitter(contrast=0.5, brightness=1.0),
-        T.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-    'noise2_test': T.Compose([
-        # T.ToPILImage(),
-        T.GaussianBlur(kernel_size=3),
-        T.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-    'norm_transform' : T.Compose([
-        # transforms.ToTensor(),
-        T.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]),
-}
+class CF10CTransforms(_TorchvisionTransforms):
+    def __init__(self, in_gpu_transform=True):
+        mean, std = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
+        img_dims = (3, 32, 32)
+        transforms_dict = {
+            'train': [
+                T.RandomCrop(32, padding=4), T.RandomHorizontalFlip(),
+                T.ToDtype(torch.float32), T.Normalize(mean, std),
+            ],
+            'val': [T.ToDtype(torch.float32), T.Normalize(mean, std)],
+            'reftrain': [T.ToDtype(torch.float32), T.Normalize(mean, std)],
+            'noise_train':  [
+                T.ColorJitter(contrast=0.5, brightness=1.0),
+                T.ToDtype(torch.float32), T.Normalize(mean, std),
+            ],
+            'clip': [
+                T.RandomCrop(32, padding=4), T.RandomHorizontalFlip(),
+                T.ToDtype(torch.float32),
+            ],
+            'noise_val': [
+                T.ColorJitter(contrast=0.5, brightness=1.0),
+                T.ToDtype(torch.float32), T.Normalize(mean, std),
+            ],
+            'noise2_test': [
+                T.GaussianBlur(kernel_size=3),
+                T.ToDtype(torch.float32), T.Normalize(mean, std),
+            ],
+            'norm_transform' : [
+                T.ToDtype(torch.float32), T.Normalize(mean, std),
+            ],
+        }
+        super().__init__(mean, std, img_dims, in_gpu_transform,
+                         transforms_dict=transforms_dict)
 
 @ray.remote(num_gpus=0)
 class AugDataFlow(DFC):
@@ -65,7 +57,7 @@ class AugDataFlow(DFC):
 
     def __init__(self, *args, **kwargs):
         """Overrideing the get_shard() of dataflow to allow for all kinds of
-        transofmrs and shifts"""
+        transforms and shifts"""
         super().__init__(*args, **kwargs)
         self.shifted_shards = {}
         self.transform_gen = None
@@ -73,7 +65,7 @@ class AugDataFlow(DFC):
     def get_transform(self, split):
         if self.transform_gen is not None:
             return self.transform_gen.get_transform(split)
-        trfngen = BasicImageTransforms(transforms_dict=ALL_TRANSFORMS)
+        trfngen = CF10CTransforms()
         self.transform_gen = trfngen
         return trfngen.get_transform(split)
 
@@ -102,7 +94,7 @@ class AugDataFlow(DFC):
         self.shifted_shards[split] = ds
         return self.shifted_shards[split][rank]
 
-    def getshard(self, split, rank, ddp_world_size, transform_cfg, device=None):
+    def getshard(self, split, rank, ddp_world_size, transform_cfg=None, device=None):
         """
         Returns a reference to the appropriate shard of the dataset.
         """

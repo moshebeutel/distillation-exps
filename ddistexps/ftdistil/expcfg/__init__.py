@@ -1,7 +1,8 @@
 from ddist.models import ResidualCNN
 from .debug import EXPERIMENTS as expdebug
+from .cifar10 import EXPERIMENTS as expcf10
 
-ALL_VALID = [expdebug]
+ALL_VALID = [expdebug, expcf10]
 EXPERIMENTS = {}
 for exp in ALL_VALID:
     for k in exp.keys():
@@ -13,10 +14,9 @@ def resnetgen(out_dim=10):
     candscf10 = {
         'fn': ResidualCNN,
         'kwargs': [
-            {'in_H': 32, 'in_W': 32, 'num_layers': 1, 'out_dim': out_dim,
-            'blocks_list': [1], 'emb_list': [8], 'stride_list': [1]},
             {'in_H': 32, 'in_W': 32, 'num_layers': 3, 'out_dim': out_dim,
-            'blocks_list': [3, 3, 3], 'emb_list': [16, 32, 64], 'stride_list': [3, 3, 3]},
+            'blocks_list': [3, 3, 3], 'emb_list': [16, 32, 64],
+             'stride_list': [1, 2, 2]},
         ],
     }
     if out_dim == 10:
