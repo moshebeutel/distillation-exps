@@ -20,21 +20,20 @@ from ddist.dispatch import BaseMapper
 from ddistexps.utils import retrive_mlflow_run 
 
 
-@ray.remote
-class DistilTrainer(BaseMapper):
+class DistilTrainerLocal(BaseMapper):
     """
     Implements reduce ops on the mapper outputs.
     """
     def __init__(self, dfctrl, worker_cfg):
         self.dfctrl = dfctrl
-        super().__init__(_DistilTrainer, worker_cfg.resource_req,
+        super().__init__(DistilWorker, worker_cfg.resource_req,
                          worker_cfg.world_size, worker_cfg.num_workers)
 
     def train(self, payloads):
         lg.info(f"Multi-train started with {len(payloads)} candidate payloads")
         dfctrl = self.dfctrl
         fn_args = {'dfctrl': dfctrl}
-        fn = _DistilTrainer.train
+        fn = DistilWorker.train
         new_work = []
         for payload in payloads:
             ret = retrive_mlflow_run(payload, payload.mlflow_expname)
@@ -51,7 +50,7 @@ class DistilTrainer(BaseMapper):
     def testmodel(self, payloads, split='train'):
         dfctrl = self.dfctrl
         fn_args = {'split': split, 'dfctrl': dfctrl}
-        fn = _DistilTrainer.testmodel
+        fn = DistilWorker.testmodel
         map_results = self.map_workers(payloads, fn, fn_args)
         reduce_results_ = []
         for vals in map_results:
@@ -63,8 +62,7 @@ class DistilTrainer(BaseMapper):
         return reduce_results_
 
 
-@ray.remote
-class _DistilTrainer(TorchDistributedWorker):
+class DistilWorkerLocal(TorchDistributedWorker):
     def __init__(self, name):
         self.basename = name
         self.name = name
@@ -124,7 +122,7 @@ class _DistilTrainer(TorchDistributedWorker):
 
     @staticmethod
     def _epoch(payload, device, shard, trunk, data_schema, optimizer, ep):
-        _WL = _DistilTrainer
+        _WL = DistilWorker 
         tr_cfg = payload.train_cfg
         bz = tr_cfg.batch_size_gpu
         d_reg, x_reg = tr_cfg.loss_cfg.distil_reg, tr_cfg.loss_cfg.xentropy_reg
@@ -168,7 +166,7 @@ class _DistilTrainer(TorchDistributedWorker):
     @staticmethod
     def train(rank, world_size, payload, dfctrl):
         # Setup before training
-        WL = _DistilTrainer
+        WL = DistilWorker 
         mlflow.set_experiment(experiment_name=payload.mlflow_expname)
         runid = payload.mlflow_runid
         device = ray_get_device()
@@ -255,3 +253,14 @@ class _DistilTrainer(TorchDistributedWorker):
             correct_s += correct.sum().item()
         return (correct_s, total_s)
 
+@ray.remote
+class DistilWorker(DistilWorkerLocal):
+    """Syntatic sugar for local trainer. Remote trainers don't work with
+    inheritance"""
+    pass
+
+@ray.remote
+class DistilTrainer(DistilTrainerLocal):
+    """Syntatic sugar for local trainer. Remote trainers don't work with
+    inheritance"""
+    pass
