@@ -157,6 +157,7 @@ class CIFAR10Dataset(_CIFARDataset):
     metadata = {
         'num_labels': 10,
         'num_train_samples':  50000,
+        'image_dims': (3, 32, 32),
         'labels': ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog',
                    'frog', 'horse', 'ship', 'truck']
     }
@@ -172,6 +173,7 @@ class CIFAR100Dataset(_CIFARDataset):
     metadata = {
         'num_labels': 100,
         'num_train_samples':  50000,
+        'image_dims': (3, 32, 32),
     }
     def __init__(self, rootdir=None, download=False):
         dsname = 'CIFAR100'
@@ -222,7 +224,12 @@ class _OnDiskImageDataset():
         def idx_map(elem):
             path = elem['path']
             elem['uid'] = file_to_index[path]
-            elem['label'] = file_to_label[path]
+            try:
+                elem['label'] = file_to_label[path]
+            except KeyError:
+                print(path)
+                print(file_to_label)
+                raise KeyError
             return elem
 
         file_paths = ds.input_files()
@@ -235,8 +242,6 @@ class _OnDiskImageDataset():
         return ds
 
     def file_to_labels(self, split, file_paths):
-        """TODO: Implement split specific logic. Might need separte logic for
-        ImageNet and TinyImageNet"""
         labelf = os.path.join(self.rootdir, 'wnids.txt')
         with open(labelf) as f:
             labels = f.readlines()
@@ -244,52 +249,60 @@ class _OnDiskImageDataset():
         labelstr_to_int = {label: index for index, label in enumerate(labels)}
 
         path_to_label = {}
+        # if split == 'val':
+        #     val_annotations = os.path.join(self.valdir, 'val_annotations.txt')
+        #     df = pd.read_csv(val_annotations, sep='\t', header=None)
+        #     file_names, labelstr = list(df[0]), list(df[1])
+        #     filename_to_labelstr = {name: label for name, label in zip(file_names, labelstr)}
+        #     for path in file_paths:
+        #         labelstr = filename_to_labelstr[os.path.basename(path)]
+        #         intlabel = labelstr_to_int[labelstr]
+        #         path_to_label[path] = intlabel
+        #         return path_to_label
+         
+        ptr = r'train/(.*)[/image]?'
         if split == 'val':
-            val_annotations = os.path.join(self.valdir, 'val_annotations.txt')
-            df = pd.read_csv(val_annotations, sep='\t', header=None)
-            file_names, labelstr = list(df[0]), list(df[1])
-            filename_to_labelstr = {name: label for name, label in zip(file_names, labelstr)}
-            for path in file_paths:
-                labelstr = filename_to_labelstr[os.path.basename(path)]
-                intlabel = labelstr_to_int[labelstr]
-                path_to_label[path] = intlabel
-                return path_to_label
-
-        ptr = r'train/(.*)/image'
+            ptr = r'val/(.*)[/image]?'
         for path in file_paths:
             labelstr = re.findall(ptr, path)
             assert len(labelstr) == 1, f"path:{path} ptr:{ptr} res:{labelstr}"
-            labelstr = labelstr[0]
+            labelstr = os.path.dirname(labelstr[0])
             intlabel = labelstr_to_int[labelstr]
             path_to_label[path] = intlabel
         return path_to_label
-#
-#
-#
-# class ImageNet1kDataset(_OnDiskImageDataset):
-#     def __init__(self, rootdir, file_extensions=['JPEG']):
-#         if rootdir is None:
-#             dsname = 'ImageNet1k'
-#             _dir = os.environ['TORCH_DATA_DIR']
-#             rootdir = os.path.join(_dir, dsname)
-#         # Create dataset
-#         super().__init__(rootdir=rootdir, file_extensions=file_extensions)
-#
-#     def get_split(self, split, read_parallelism=1024):
-#         return super().get_split(split, read_parallelism)
-#
-#     def get_data_schema(self):
-#         return {'x_key': 'image', 'y_key': 'label', 'index_key': 'uid'}
-#
-#
-class TinyImageNet4cDataset(_OnDiskImageDataset):
+
+
+
+class ImageNet1kDataset(_OnDiskImageDataset):
+    metadata = {
+        'num_labels': 1000,
+        'num_train_samples':  1281167,
+        'image_dims': (3, 224, 224),
+    }
+    def __init__(self, rootdir, file_extensions=['JPEG']):
+        if rootdir is None:
+            dsname = 'ImageNet1k'
+            _dir = os.environ['TORCH_DATA_DIR']
+            rootdir = os.path.join(_dir, dsname)
+        # Create dataset
+        super().__init__(rootdir=rootdir, file_extensions=file_extensions)
+
+    def get_split(self, split, read_parallelism=1024):
+        return super().get_split(split, read_parallelism)
+
+    def get_data_schema(self):
+        return {'x_key': 'image', 'y_key': 'label', 'index_key': 'uid'}
+
+
+class TinyImageNet200Dataset(_OnDiskImageDataset):
     metadata = {
         'num_labels': 200,
         'num_train_samples':  100000,
+        'image_dims': (3, 64, 64),
     }
     def __init__(self, rootdir=None, file_extensions=['JPEG']):
         if rootdir is None:
-            dsname = 'TinyImageNet4c'
+            dsname = 'TinyImageNet200'
             _dir = os.environ['TORCH_DATA_DIR']
             rootdir = os.path.join(_dir, dsname)
         # Create dataset

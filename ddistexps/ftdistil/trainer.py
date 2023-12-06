@@ -112,7 +112,7 @@ class FineTuneWorker(DistilWorkerLocal):
                 corrn, totn = TR.testmodel(rank, world_size, payload, dfctrl, 'noise_val')
                 tr_summary['val_acc'] = val_acc
                 tr_summary['clean_acc'] = val_acc
-                tr_summary['noise_acc'] = corrn / totn
+                tr_summary['noise_acc'] = (corrn / totn) * 100.0
             tr_summary['epoch_duration'] = en_time - st_time
             if rank == 0:
                 with mlflow.start_run(run_id=runid):

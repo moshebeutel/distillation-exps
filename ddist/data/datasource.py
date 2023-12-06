@@ -27,12 +27,14 @@ class ImageDatasource(BinaryDatasource):
                                      **reader_args)
         # Cast it to images
         assert len(records) == 1
-        path, data = records[0]
+        records = records.to_pandas()
+        path = records['path'].values[0]
+        data = records['bytes'].values[0]
         # Convert grayscale to 3-channel if grayscale exists.
         image = Image.open(io.BytesIO(data))
         image = image.convert("RGB")
         array = np.array(image)
-        # array = np.ones((3, 64, 64))
-        # assert len(array.shape) == 3, array.shape
+        # [N, H, W, C] -> [N, C, H, W
+        array = np.transpose(array, (2, 0, 1))
         array = TensorArray(array)
         return pd.DataFrame({'image': [array], 'path': [path]})

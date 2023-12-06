@@ -6,11 +6,12 @@ import numpy as np
 from argparse import ArgumentParser
 from rich import print as rr
 
+from ddist.data import get_dataset
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 
 from ddistexps.baseline.trainer import BaselineTrainer as BLTrainer
 from ddistexps.baseline.expcfg import EXPERIMENTS
-from ddistexps.baseline.expcfg import get_modulegrid
+from ddistexps.baseline.expcfg import get_candgen
 from ddistexps.utils import get_dataflow
 
 
@@ -25,7 +26,10 @@ if __name__ == '__main__':
     expname = 'baseline/' + expname
     spec['mlflow_expname'] = [expname]
     meta = spec['meta']
-    module_grid = get_modulegrid(meta, 100 if 'cifar100' in expname else 10)
+
+    dataset = spec['dataflow']['data_set']
+    ds_meta = get_dataset(dataset).metadata
+    module_grid = get_candgen(meta, ds_meta)
     spec['module_cfg'] = module_grid
 
     prod_space = spec_to_prodspace(**spec)

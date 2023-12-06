@@ -12,11 +12,9 @@ from ddist.utils import get_logger
 from ddist.utils import CLog as lg
 from ddist.utils import Weighting as W
 from ddist.data.dataset import (
-    CIFAR10Dataset,
-    CIFAR100Dataset,
-    TinyCIFAR10Dataset,
+    CIFAR10Dataset, CIFAR100Dataset, TinyCIFAR10Dataset,
     RangeDataset,
-    TinyImageNet4cDataset,
+    TinyImageNet200Dataset, ImageNet1kDataset,
 )
 from ddist.data.preprocessors import (
     RangeDSTransforms,
@@ -32,8 +30,10 @@ def get_dataset(dataset_name):
         return TinyCIFAR10Dataset
     elif dataset_name == 'CIFAR100':
         return CIFAR100Dataset
-    elif dataset_name == 'TinyImageNet4c':
-        return TinyImageNet4cDataset
+    elif dataset_name == 'TinyImageNet200':
+        return TinyImageNet200Dataset
+    elif dataset_name == 'ImageNet1k':
+        return ImageNet1kDataset
     raise ValueError(f"Unknown dataset: {dataset_name}")
 
 
@@ -67,6 +67,7 @@ class _DataFlowControl:
         metadata = ds_class.metadata
         N, d = metadata['num_train_samples'], metadata['num_labels']
 
+        self.__ds_metadata = metadata
         self.__ds_name = ds_name
         self.train_data_shape = (N, d)
         self._res_ref = ray.put(np.zeros((N, d)))
@@ -117,13 +118,11 @@ class _DataFlowControl:
         """Does not require randomization so we attach all preprocessors
         statically. Does require the residuals to be updated. We leave that
         mapper to applied on each call after repeat() is called."""
-        ds_ref = self.__attach_select_keys(ds_ref)
         shards = ds_ref.split(self.world_size)
         return shards
 
     def _create_train_shards(self, ds_train, shard_bounds):
         split_bounds = None
-        ds_train = self.__attach_select_keys(ds_train)
         if shard_bounds is not None:
             split_bounds = [shard_bounds[i][1] for i in range(len(shard_bounds))]
             split_bounds = split_bounds[:-1]
@@ -146,7 +145,7 @@ class _DataFlowControl:
                 ret[k] = batch[k]
         return ret
 
-    def __attach_select_keys(self, ds):
+    def attach_select_keys(self, ds):
         def select_keys(elem):
             return self.map_select_keys(elem)
         ds = ds.map(select_keys)
@@ -161,10 +160,19 @@ class _DataFlowControl:
         returned as a single set of tensors"""
         if device is None:
             raise ValueError("device cannot be None")
+        shard = self.attach_select_keys(shard)
         numpyrefs = shard.to_numpy_refs()
-        assert len(numpyrefs) == 1
-        dataf = ray.get(numpyrefs[0])
-        datadict = {k: torch.tensor(v) for k,v in dataf.items()}
+        numpyobjs = ray.get(numpyrefs)
+        keys = numpyobjs[0].keys()
+        dataf = {k: np.concatenate([x[k] for x in numpyobjs]) for k in keys}
+        datadict = {}
+        for k, v in dataf.items():
+            try:
+                v = torch.tensor(v)
+                datadict[k] = v
+            except Exception as e:
+                lg.info(f"Failed to convert {k} to torch.tensor v:{v}")
+                raise e
         schema = self.__ds_schema
         xkey = schema['x_key']
         return _InMemDS(split, datadict, xkey, device, transform, transform_cfg)
@@ -181,7 +189,8 @@ class _DataFlowControl:
 
         ddp_rank = rank
         shard = self._shards_tr[ddp_rank]
-        tfgen = get_transform(getattr(transform_cfg, 'name', None))()
+        tfgen = get_transform(getattr(transform_cfg, 'name', None))
+        tfgen = tfgen(image_dims=self.__ds_metadata['image_dims'])
         transform = tfgen.get_transform(split='val')
         if split == 'val':
             shard = self._shards_val[ddp_rank]
