@@ -138,6 +138,7 @@ class TinyCIFAR10Dataset(_CIFARDataset):
     metadata = {
         'num_labels': NUM_LABELS,
         'num_train_samples': NUM_TR_SAMPLES,
+        'image_dims': (3, 32, 32),
         'num_tr_samples_per_label': TR_SAMPLES_PER_LABEL,
         'tr_label_frac': TR_LABEL_FRAC,
     }
