@@ -23,6 +23,9 @@ def resnetgen(in_H=32, in_W=32, out_dim=10):
             # Resnet 18
             {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
             'blocks_list': [3, 3, 3], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
+            # Resnet 
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
+            'blocks_list': [12, 12, 12], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
         ],
     }
     return cands
