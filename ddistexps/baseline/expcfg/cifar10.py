@@ -1,10 +1,10 @@
 EXPERIMENTS = {
-    'baseline-cifar10': {
+    'cifar10': {
         'meta': {
             'worker_cfg': {
-                'resource_req': {'num_gpus': 1},
+                'resource_req': {'num_gpus': 0.25},
                 'world_size': 1,
-                'num_workers': 4,
+                'num_workers': 16,
             },
             'gridgen': 'resnetgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)

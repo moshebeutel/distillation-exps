@@ -16,18 +16,13 @@ def resnetgen(in_H=32, in_W=32, out_dim=10):
     cands = {
         'fn': ResidualCNN,
         'kwargs': [
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
+            'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [1, 2]},
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
+            'blocks_list': [1, 2], 'emb_list': [16, 32], 'stride_list': [1, 2]},
             # Resnet 18
             {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
             'blocks_list': [3, 3, 3], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
-            # ResNet 36
-            {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
-            'blocks_list': [6, 6, 6], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
-            # ResNet 96
-            {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
-            'blocks_list': [12, 12, 12], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
-            # ResNet 144
-            {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
-            'blocks_list': [24, 24, 24], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
         ],
     }
     return cands
