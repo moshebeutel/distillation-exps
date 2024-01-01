@@ -11,15 +11,20 @@ from ddist.data import get_dataset
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 
 from ddistexps.baseline.trainer import BaselineTrainer as BLTrainer
+from dotenv import load_dotenv
+load_dotenv()
 
-os.environ['TORCH_DATA_DIR'] = f'{Path.home()}/datasets/'
-os.environ['DDIST_EXPS_DIR'] = f'{Path.home()}/GIT/distillation-exps'
 from ddistexps.baseline.expcfg import EXPERIMENTS
 from ddistexps.baseline.expcfg import get_candgen
 from ddistexps.utils import get_dataflow
 
 
 if __name__ == '__main__':
+    assert os.environ['TORCH_DATA_DIR'] == f'{Path.home()}/datasets/',\
+        'Environment variable TORCH_DATA_DIR must be set to {Path.home()}/datasets/'
+    assert os.environ['DDIST_EXPS_DIR'] == f'{Path.home()}/GIT/distillation-exps',\
+        'Environment variable DDIST_EXPS_DIR must be set to {Path.home()}/GIT/distillation-exps'
+
     parser = ArgumentParser()
     msg = "The exeriment name as expcfg.EXPERIMENTS."
     parser.add_argument("--expname", type=str, help=msg, required=True,
