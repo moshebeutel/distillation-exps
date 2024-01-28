@@ -31,7 +31,6 @@ def retrive_mlflow_run(payload, expname):
         1. converting the namespace to a dictionary, and flattening the dictionary,
         2. We then stringify the flattened dictionary,
         3. computing the md5 hash of the string, compare.
-        (We don't handle hash-collisions)
     """
     import mlflow
     from mlflow.tracking.client import MlflowClient

@@ -185,6 +185,12 @@ class DistilWorkerLocal(TorchDistributedWorker):
         nepochs = train_cfg.num_epochs
         optmzr = WL.get_optimizer(optim_cfg, to_opt)
         lr_sched = WL.get_lr_sched(optim_cfg, optmzr, nepochs)
+        # Record initial accuracy of trunk
+        corr, tot = WL.testmodel(rank, world_size, payload,
+                                 dfctrl, 'val', module=trunk)
+        trunk_acc = (corr / tot) * 100.0
+        with mlflow.start_run(run_id=runid):
+            mlflow.log_metrics({'teacher_acc': trunk_acc}, step=0)
         # Train loop
         start_time = time.time()
         for ep in range(train_cfg.num_epochs):
@@ -216,13 +222,11 @@ class DistilWorkerLocal(TorchDistributedWorker):
 
     @staticmethod
     @torch.no_grad()
-    def testmodel(rank, world_size, payload, dfctrl, split):
+    def testmodel(rank, world_size, payload, dfctrl, split, module=None):
         """
         Compute the test accuracy w.r.t split specified. Always uses reference
         loaders.
-        model: If no model is provided, we return the ensemble-accuracy.
-
-        rank: Can be none in non-ddp mode
+        If module is specified, will test that module instead of `payload.module`.
         """
         device = ray_get_device()
         jpl = payload 
@@ -237,7 +241,10 @@ class DistilWorkerLocal(TorchDistributedWorker):
         schema = ray.get(dfctrl.get_data_schema.remote())
         x_key, y_key = schema['x_key'], schema['y_key']
         total_s, correct_s = 0, 0
-        model = jpl.module
+        if module is not None:
+            model = module
+        else:
+            model = jpl.module
         model.eval(); model.to(device)
         for batchidx, batch in enumerate(batch_iter):
             x_batch, y_batch = batch[x_key].to(device), batch[y_key].to(device)
@@ -247,7 +254,7 @@ class DistilWorkerLocal(TorchDistributedWorker):
             else:
                 predicted = torch.sigmoid(torch.squeeze(logits))
                 predicted = (predicted > 0.5)
-            iny = torch.squeeze(y_batch.to(device))#, non_blocking=True))
+            iny = torch.squeeze(y_batch.to(device))
             correct = predicted.eq(iny)
             total_s += logits.size(0)
             correct_s += correct.sum().item()

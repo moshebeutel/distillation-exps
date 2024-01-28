@@ -1,10 +1,10 @@
 EXPERIMENTS = {
-    'distil-cifar10': {
+    'cifar10': {
         'meta': {
             'worker_cfg': {
                 'resource_req': {'num_gpus': 1.0/2.0},
                 'world_size': 1,
-                'num_workers': 8,
+                'num_workers': 4,
             },
             'gridgen': 'resnetgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
@@ -17,9 +17,9 @@ EXPERIMENTS = {
         'ckpt_file': None,
         'input_cfg': {'input_shape': (3, 32, 32)},
         'test_cfg': {'batch_size_gpu': 128},
-        'trunk_cfg': {
-            'name': ['CIFAR10ResNet56', 'ClipCIFAR10'],
-        },
+        'trunk_cfg': [
+            { 'expname': 'baseline/cifar10', 'runname': 'debonair-ray-624'},
+        ],
         'train_cfg': {
             'num_epochs': [30, 60],
             'batch_size_gpu': 128,
@@ -39,7 +39,7 @@ EXPERIMENTS = {
             'transform': {
                 'global_shuffle': True,
             },
-            'use_amp': [True, False],
+            'use_amp': False,
             'loss_cfg': {
                 'distil_reg': [0.5], 'xentropy_reg': [0.5],
                 'temperature': [

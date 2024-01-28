@@ -12,11 +12,10 @@ from rich import print as rr
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 from ddistexps.utils import get_dataflow
 
-from ddistexps.baseline.trainer import BaselineTrainer
 from ddistexps.distillation.trainer import DistilTrainer
-from ddistexps.distillation.teachers import Trunks
 from ddistexps.distillation.expcfg import EXPERIMENTS
 from ddistexps.distillation.expcfg import get_modulegrid
+from ddistexps.distillation.teachers import get_teacher_model
 
 
 if __name__ == '__main__':
@@ -50,28 +49,16 @@ if __name__ == '__main__':
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
     distildispatch_payloads = [p for p in payloads if p.dispatch == 'distillation']
-    baselinedispatch_payloads = [p for p in payloads if p.dispatch == 'baseline']
-    distildispatch, baselinedispatch = None, None
-    if len(distildispatch_payloads) > 0:
-        distildispatch = DistilTrainer.remote(**dispatch_kwargs)
-    if len(baselinedispatch_payloads) > 0:
-        baselinedispatch = BaselineTrainer.remote(**dispatch_kwargs)
+    distildispatch = None
+    distildispatch = DistilTrainer.remote(**dispatch_kwargs)
 
-    trunks = Trunks()
     for p in payloads:
         _kwargs = namespace_to_dict(p.module_cfg.kwargs)
         p.module = p.module_cfg.fn(**_kwargs)
-        if p.dispatch in ['distillation']:
-            p.trunk = trunks(p.trunk_cfg)
-    all_refs = []
-    if distildispatch is not None:
-        distilref = distildispatch.train.remote(distildispatch_payloads)
-        all_refs.append(distilref)
-    if baselinedispatch is not None:
-        blref = baselinedispatch.train.remote(baselinedispatch_payloads)
-        all_refs.append(blref)
+        p.trunk = get_teacher_model(p.trunk_cfg)
+    distilref = distildispatch.train.remote(distildispatch_payloads)
     st_time = time.time()
-    ray.get(all_refs)
+    ray.get(distilref)
     info_ = {'experiment': expname, 'num_payloads': len(payloads),
             'total-duration': time.time() - st_time}
     rr("Experiment completed:", info_)
