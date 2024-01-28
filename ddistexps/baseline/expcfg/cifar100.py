@@ -1,13 +1,8 @@
-import os
-
-OUTDIR = os.path.join(os.environ['DDIST_EXPS_DIR'])
-
 EXPERIMENTS = {
-    'baseline-cifar100': {
-        # These will not be used for comparison
+    'cifar100': {
         'meta': {
             'worker_cfg': {
-                'resource_req': {'num_gpus': 0.5},
+                'resource_req': {'num_gpus': 1.0},
                 'world_size': 1,
                 'num_workers': 4,
             },
