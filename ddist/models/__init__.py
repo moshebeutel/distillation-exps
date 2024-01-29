@@ -332,31 +332,25 @@ class EarlyRNNClassifier(nn.Module):
         for n, p in self.named_parameters():
             p.requires_grad = False
 
-class ConnectionContainer(nn.Module):
+class Composer(nn.Module):
     """
     A container/wrapper class to model arbitrary module connections.
+    Modules should comprise of 
     """
     def __init__(self, non_trainables, trainable, forward_fn=None):
-        super(ConnectionContainer, self).__init__()
+        super(Composer, self).__init__()
         self.model_list = nn.ModuleList(non_trainables)
         self.forward_fn = forward_fn
         self.trainable = trainable
         for n, p in self.model_list.named_parameters():
             assert p.requires_grad == False
-        self.layer_block = self.trainable.layer_block
 
     def forward(self, x):
         if self.forward_fn is None:
             raise NotImplementedError
         ret = self.forward_fn(self, x)
-        # ret = self.squash_scale(ret)
         return ret
 
-    def pre_block(self, x):
-        return self.trainable.pre_block(x)
-
-    def post_block(self, x):
-        return self.trainable.post_block(x)
 
 class Ensemble(nn.Module):
     """"
