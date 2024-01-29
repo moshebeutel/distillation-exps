@@ -10,11 +10,21 @@ for exp in ALL_VALID:
         EXPERIMENTS[k] = exp[k]
 
 
-def resnetgen(out_dim=10):
-    # Define product-space or explicit records here
-    candscf10 = {
+def resnetgen(in_H=32, in_W=32, out_dim=10):
+    # Define product-space or explicit records here.
+    # The configuration here is added to the experiment spec as 
+    #   spec['module_cfg'] = module_grid
+    # Here module_grid is returned by this function can thus be
+    # any non-closured product space.
+    cands = {
         'fn': ResidualCNN,
         'kwargs': [
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 4, 'out_dim': out_dim,
+            'blocks_list': [2, 2, 2, 2], 'emb_list': [16, 32, 32, 64],
+             'stride_list': [1, 2, 2, 2]},
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 4, 'out_dim': out_dim,
+            'blocks_list': [5, 5, 5, 5], 'emb_list': [16, 32, 32, 64],
+             'stride_list': [1, 2, 2, 2]},
             {'in_H': 32, 'in_W': 32, 'num_layers': 1, 'out_dim': out_dim,
             'blocks_list': [1], 'emb_list': [8], 'stride_list': [1]},
             {'in_H': 32, 'in_W': 32, 'num_layers': 1, 'out_dim': out_dim,
@@ -25,25 +35,26 @@ def resnetgen(out_dim=10):
             'blocks_list': [1, 2], 'emb_list': [8,16], 'stride_list': [1, 2]},
             {'in_H': 32, 'in_W': 32, 'num_layers': 2, 'out_dim': out_dim,
             'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [1, 2]},
-            # {'in_H': 32, 'in_W': 32, 'num_layers': 4, 'out_dim': out_dim,
-            # 'blocks_list': [2, 2, 2, 2], 'emb_list': [16, 32, 32, 64], 'stride_list': [1, 2, 2, 2]},
-            # {'in_H': 32, 'in_W': 32, 'num_layers': 3, 'out_dim': out_dim,
+            # {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
+            # 'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [1, 2]},
+            # {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
+            # 'blocks_list': [1, 2], 'emb_list': [16, 32], 'stride_list': [1, 2]},
+            # # Resnet 18
+            # {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
             # 'blocks_list': [3, 3, 3], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
-            # {'in_H': 32, 'in_W': 32, 'num_layers': 3, 'out_dim': out_dim,
-            # 'blocks_list': [5, 5, 5], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
+            # # Resnet 
+            # {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
+            # 'blocks_list': [12, 12, 12], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
         ],
     }
-    if out_dim == 10:
-        cands = candscf10
-    elif out_dim == 100:
-        raise NotImplementedError(out_dim)
-    else:
-        raise ValueError(out_dim)
     return cands
 
-def get_modulegrid(meta, outdim):
+
+def get_candgen(meta, ds_meta):
+    in_H, in_W = ds_meta['image_dims'][1:]
+    outdim = ds_meta['num_labels']
     if meta['gridgen'] in ['resnetgen']:
-        grid_records = resnetgen(outdim)
+        grid_records = resnetgen(in_H, in_W, outdim)
     else:
         raise ValueError(meta['gridgen'])
     return grid_records

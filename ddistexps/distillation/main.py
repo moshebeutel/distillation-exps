@@ -9,13 +9,13 @@ import numpy as np
 from argparse import ArgumentParser
 from rich import print as rr
 
+from ddist.data import get_dataset
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
-from ddistexps.utils import get_dataflow
 
+from ddistexps.utils import get_dataflow
+from ddistexps.teachers import get_teacher_model
+from ddistexps.distillation.expcfg import get_candgen, EXPERIMENTS
 from ddistexps.distillation.trainer import DistilTrainer
-from ddistexps.distillation.expcfg import EXPERIMENTS
-from ddistexps.distillation.expcfg import get_modulegrid
-from ddistexps.distillation.teachers import get_teacher_model
 
 
 if __name__ == '__main__':
@@ -30,8 +30,12 @@ if __name__ == '__main__':
     expname = 'distillation/' + expname
     spec['mlflow_expname'] = [expname]
     meta = spec['meta']
-    module_grid = get_modulegrid(meta, 100 if 'cifar100' in expname else 10)
+
+    dataset = spec['dataflow']['data_set']
+    ds_meta = get_dataset(dataset).metadata
+    module_grid = get_candgen(meta, ds_meta)
     spec['module_cfg'] = module_grid
+
     prod_space = spec_to_prodspace(**spec)
     payloads = [dict_to_namespace(p) for p in prod_space]
     meta = dict_to_namespace(meta)
@@ -49,7 +53,6 @@ if __name__ == '__main__':
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
     distildispatch_payloads = [p for p in payloads if p.dispatch == 'distillation']
-    distildispatch = None
     distildispatch = DistilTrainer.remote(**dispatch_kwargs)
 
     for p in payloads:

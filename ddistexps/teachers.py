@@ -27,6 +27,18 @@ class NoOpTeacher(nn.Module):
         even = even.to(dtype=torch.float32)
         odd = odd.to(dtype=torch.float32)
         return torch.unsqueeze(even + odd, dim=-1)
+    
+def _load_mlflow_module(model_cls, model_kwargs, sd):
+    """Loads a model from mlflow registry. This function handles
+      picking the right module class and type-checking arguments."""
+    if 'ddist.models.ResidualCNN' in model_cls:
+        model_cls = ddist.models.ResidualCNN
+        model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
+    else:
+        raise ValueError("Unknown trunk:", model_cls)
+    trunk = model_cls(**model_kwargs)
+    a, b = trunk.load_state_dict(sd, strict=True)
+    return trunk
 
 def get_teacher_model(teacher_cfg):
     """
@@ -61,39 +73,16 @@ def get_teacher_model(teacher_cfg):
     # Get kwargs
     kwarg_keys = [k for k in run.data.params.keys() if k.startswith('module_cfg.kwargs')]
     model_kwargs = {k.split('.')[-1]: run.data.params[k] for k in kwarg_keys}
-    return Teachers.load_module(model_cls, model_kwargs, sd)
+    return _load_mlflow_module(model_cls, model_kwargs, sd)
 
 
-class Teachers:
-    """
-    Add all trunk initilization code here.
-    """
 
-    @staticmethod
-    def load_module(model_cls, model_kwargs, sd):
-        if 'ddist.models.ResidualCNN' in model_cls:
-            model_cls = ddist.models.ResidualCNN
-            model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
-        else:
-            raise ValueError("Unknown trunk:", model_cls)
-        trunk = model_cls(**model_kwargs)
-        a, b = trunk.load_state_dict(sd, strict=True)
-        return trunk
+def ClipCIFAR10_args(args):
+    """Returns trunks and sets the model type. """
+    from ddist.data.dataset import CIFAR10Dataset
+    labels = CIFAR10Dataset.metadata['labels']
 
-    @staticmethod
-    def RangeTrunk(args):
-        """Custom trunk for range dataset. Note that the input shape of trunk is
-        controlled from RangeDataset."""
-        return NoOpTeacher()
-
-
-    @staticmethod
-    def ClipCIFAR10_args(args):
-        """Returns trunks and sets the model type. """
-        from ddist.data.dataset import CIFAR10Dataset
-        labels = CIFAR10Dataset.metadata['labels']
-
-        kwargs = {'labels': labels, 'model_pretrain_save': 'laion2b_s34b_b79k'}
-        trunk = clip_vitb32(**kwargs)
-        return trunk
+    kwargs = {'labels': labels, 'model_pretrain_save': 'laion2b_s34b_b79k'}
+    trunk = clip_vitb32(**kwargs)
+    return trunk
 
