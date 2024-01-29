@@ -4,12 +4,12 @@ EXPERIMENTS = {
         # common for the entire experiment.
         'meta': {
             'worker_cfg': {
-                'resource_req': {'num_gpus': 1.0},
+                'resource_req': {'num_gpus': .25},
                 'world_size': 1,
                 'num_workers': 4,
             },
             'gridgen': 'resnetgen',
-            'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
+            'dedup_policy': 'version',  # 'ignore' or 'version' (default)
         },
         # Following can be gridded
         'dataflow': {

@@ -4,7 +4,7 @@ EXPERIMENTS = {
             'worker_cfg': {
                 'resource_req': {'num_gpus': 0.25},
                 'world_size': 1,
-                'num_workers': 16,
+                'num_workers': 4,
             },
             'gridgen': 'resnetgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
@@ -35,7 +35,7 @@ EXPERIMENTS = {
                  'lr_milestone_fracs': [.4, 0.6]},
             ],
             'transform': {
-                'global_shuffle': [True, False],
+                'global_shuffle': [True],
             },
             'use_amp': False,
             'lossfn': 'xentropy',
