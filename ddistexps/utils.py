@@ -102,3 +102,48 @@ def get_dataflow(args, world_size, engine='default'):
         enginecls = AugDataFlow
     dfctrl = get_persistent_actor(df_actor_name, enginecls, dataflow_args)
     return dfctrl
+
+def load_mlflow_module(run_cfg):
+    """Loads a module from mlflow registry. This function handles
+      picking the right module class and type-checking arguments.
+      
+      run_cfg: A namespace with the following attributes:
+            expname: The name of the experiment
+            runname: The name of the run
+    """
+    import mlflow
+    from mlflow.tracking.client import MlflowClient
+    exp_name = run_cfg.expname
+    run_name = run_cfg.runname
+    exp = mlflow.get_experiment_by_name(exp_name)
+    client = MlflowClient()
+    existing_runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        filter_string=f'tags.mlflow.runName = "{run_name}"'
+    )
+    if len(existing_runs) == 0:
+        raise ValueError(f"Invalid run_cfg config: {run_cfg}. No runs found.")
+    if len(existing_runs) > 1:
+        raise ValueError(f"Invalid run_cfg config: {run_cfg}. Multiple runs found.")
+    run = existing_runs[0]
+    artifacts = [f.path for f in client.list_artifacts(run.info.run_id)]
+    if len(artifacts) == 0:
+        raise ValueError(f"Invalid run_cfg config: {run_cfg}. No artifacts found.") 
+    ckpt = [f for f in artifacts if f.startswith('ep-')][-1]
+    artifact_uri = str(run.info.artifact_uri) + '/' + ckpt
+    sd = mlflow.pytorch.load_state_dict(artifact_uri)
+
+    model_cls = run.data.params['module_cfg.fn']
+    # Get kwargs
+    kwarg_keys = [k for k in run.data.params.keys() if k.startswith('module_cfg.kwargs')]
+    model_kwargs = {k.split('.')[-1]: run.data.params[k] for k in kwarg_keys}
+    if 'ddist.models.ResidualCNN' in model_cls:
+        from ddist.models import ResidualCNN
+        model_cls = ResidualCNN
+        model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
+    else:
+        raise ValueError("Unknown trunk:", model_cls)
+    trunk = model_cls(**model_kwargs)
+    a, b = trunk.load_state_dict(sd, strict=True)
+    return trunk, run.info.run_id
+

@@ -339,11 +339,11 @@ class Composer(nn.Module):
     """
     def __init__(self, non_trainables, trainable, forward_fn=None):
         super(Composer, self).__init__()
-        self.model_list = nn.ModuleList(non_trainables)
-        self.forward_fn = forward_fn
-        self.trainable = trainable
-        for n, p in self.model_list.named_parameters():
+        for n, p in nn.ModuleList(non_trainables).named_parameters():
             assert p.requires_grad == False
+        self.forward_fn = forward_fn
+        self.ensemble = Ensemble(non_trainables)
+        self.trainable = trainable
 
     def forward(self, x):
         if self.forward_fn is None:
