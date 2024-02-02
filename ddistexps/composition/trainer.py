@@ -217,7 +217,9 @@ class ComposeWorkerLocal(TorchDistributedWorker):
             with mlflow.start_run(run_id=runid):
                 mlflow.log_metrics(info, step=train_cfg.num_epochs)
                 name = 'ep-' + str(train_cfg.num_epochs)
-                mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
+                X = torch.rand(1, *payload.input_cfg.input_shape)
+                # mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
+                mlflow.pytorch.log_model(model, name, input_example=X.numpy())
         return 
 
     @staticmethod

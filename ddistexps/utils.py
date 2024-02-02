@@ -1,12 +1,16 @@
 import ray
-import ray
+import os
+import numpy as np
+import hashlib
+import torch
 from argparse import Namespace
+from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
+
 from ddist.data import DataFlowControl
 from ddistexps.ftdistil.dataflow import AugDataFlow
 from ddist.utils import namespace_to_dict, flatten_dict
 from ddist.utils import CLog as lg
-import numpy as np
-import hashlib
+
 
 def param_hash(cfg):
     cfgstr = ''.join([f'{k}={cfg[k]}\n' for k in sorted(cfg.keys())]).strip()
@@ -103,6 +107,16 @@ def get_dataflow(args, world_size, engine='default'):
     dfctrl = get_persistent_actor(df_actor_name, enginecls, dataflow_args)
     return dfctrl
 
+def load_mlflow_run_module(run):
+    """Loads the latest module from mlflow registry.      
+      run: A mlflow.entities.Run object
+    """
+    from mlflow.tracking.client import MlflowClient
+    expname = MlflowClient().get_experiment(run.info.experiment_id).name
+    run_cfg = {'expname': expname,
+                'runname': run.info.run_name}
+    return load_mlflow_module(Namespace(**run_cfg))
+
 def load_mlflow_module(run_cfg):
     """Loads a module from mlflow registry. This function handles
       picking the right module class and type-checking arguments.
@@ -129,10 +143,19 @@ def load_mlflow_module(run_cfg):
     artifacts = [f.path for f in client.list_artifacts(run.info.run_id)]
     if len(artifacts) == 0:
         raise ValueError(f"Invalid run_cfg config: {run_cfg}. No artifacts found.") 
-    ckpt = [f for f in artifacts if f.startswith('ep-')][-1]
+    ckpts = [f for f in artifacts if f.startswith('ep-')]
+    # Get last epoch checkpoint
+    epochs = [int(f[len("ep-"):]) for f in ckpts]
+    ckpt = 'ep-' + str(max(epochs))
     artifact_uri = str(run.info.artifact_uri) + '/' + ckpt
+    artifact_files = os.listdir(artifact_uri)
+    if 'state_dict.pth' not in artifact_files:
+        # Not a state dict, we will try to load the model directly
+        model = mlflow.pytorch.load_model(artifact_uri)
+        return model, run.info.run_id
+    # If its a state-dict its hard to figure out container structure. We can only
+    # do this for simples cases.
     sd = mlflow.pytorch.load_state_dict(artifact_uri)
-
     model_cls = run.data.params['module_cfg.fn']
     # Get kwargs
     kwarg_keys = [k for k in run.data.params.keys() if k.startswith('module_cfg.kwargs')]
@@ -147,3 +170,23 @@ def load_mlflow_module(run_cfg):
     a, b = trunk.load_state_dict(sd, strict=True)
     return trunk, run.info.run_id
 
+
+def profile_module(device, mdl_or_mdl_list, inp_shape, stats='flops'):
+    mdl_list = mdl_or_mdl_list
+    if type(mdl_list) is not list: mdl_list = [mdl_list]
+    inp_shape = (1,) + inp_shape
+    x = torch.tensor(np.ones(inp_shape)).float()
+    x = x.to(device)
+    # Execute once to make sure everything is initialized
+    flops_list = []
+    for model in mdl_list:
+        model.to(device)
+        # Execute once to initialize lazy layers and such
+        loss = model(x)
+        prof = FlopsProfiler(model)
+        prof.start_profile()
+        loss = model(x)
+        flops = prof.get_total_flops()
+        prof.end_profile()
+        flops_list.append(flops)
+    return flops_list

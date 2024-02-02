@@ -9,8 +9,9 @@ from ddistexps.composition.gen_forwards import (
 )
 
 from .debug import EXPERIMENTS as expdebug
+from .cifar10 import EXPERIMENTS as expcifar10
 
-ALL_VALID = [expdebug]
+ALL_VALID = [expdebug, expcifar10]
 EXPERIMENTS = {}
 for exp in ALL_VALID:
     for k in exp.keys():
@@ -30,7 +31,7 @@ def resnetgen(in_H=32, in_W=32, out_dim=10):
             {'in_H': in_H, 'in_W': in_W, 'num_layers': 1, 'out_dim': out_dim,
             'blocks_list': [1], 'emb_list': [16], 'stride_list': [1]},
             {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
-            'blocks_list': [1, 1], 'emb_list': [16, 16], 'stride_list': [1, 2]},
+            'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [1, 2]},
         ],
     }
     return cands
