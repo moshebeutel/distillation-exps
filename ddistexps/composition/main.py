@@ -12,10 +12,9 @@ from rich import print as rr
 from ddist.data import get_dataset
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 
-from ddistexps.utils import get_dataflow
+from ddistexps.utils import get_dataflow, get_composed_model
 from ddistexps.teachers import get_teacher_model
 from ddistexps.composition.expcfg import get_candgen, EXPERIMENTS
-from ddistexps.composition.expcfg import get_composed_model
 from ddistexps.composition.trainer import ComposeTrainer
 
 

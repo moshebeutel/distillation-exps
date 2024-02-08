@@ -198,3 +198,46 @@ def profile_module(device, mdl_or_mdl_list, inp_shape, stats='flops'):
         prof.end_profile()
         flops_list.append(flops)
     return flops_list
+
+# Connections 
+from ddistexps.composition.gen_forwards import (
+    fwd_noconnection, fwd_residual, fwd_share_all,
+    fwd_share_post_layer, fwd_layer_by_layer, fwd_resnetconn,
+)
+
+CONNDICT = {
+    'noconn': fwd_noconnection,
+    'residual_error': fwd_residual,
+    'share_all': fwd_share_all,
+    'share_post_layer': fwd_share_post_layer,
+    'resnet_conn': fwd_resnetconn,
+    'layer_by_layer': fwd_layer_by_layer,
+}
+
+def get_composed_model(input_cfg, module_cfg, composer_cfg):
+    """
+    Returns a composed model. The composition is constructed by
+    connection the module with the specified pretrained model
+    and connection in composer_cfg.
+    """
+    def dry_run(model, input_size):
+        x = np.random.normal(size=(2,) + input_size)
+        x = torch.tensor(x, dtype=torch.float32)
+        _ = model(x)
+        return model
+
+    module_cls, module_kwargs = module_cfg.fn, module_cfg.kwargs
+    module = module_cls(**namespace_to_dict(module_kwargs))
+    input_size = input_cfg.input_shape
+    module = dry_run(module, input_size)
+
+    run_cfg = composer_cfg.src_run_cfg
+    src_model, _ = load_mlflow_module(run_cfg)
+    for n, p in src_model.named_parameters():
+        p.requires_grad = False
+    conname = composer_cfg.conn_name
+    container = module 
+    if conname is not None:
+        fwd_fn = CONNDICT[conname]
+        container = Composer([src_model], module, fwd_fn)
+    return container
