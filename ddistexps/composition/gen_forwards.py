@@ -27,7 +27,6 @@ def fwd_noconnection(self, x):
 def fwd_residual(self, x):
     """We think of the prediction as Ensemble(x) + residual(x) where the
     trainable model will be used to approximate the residual"""
-    out = 0.0
     return self.ensemble(x) + self.trainable(x)
 
 def fwd_share_all(self, x):
@@ -57,4 +56,29 @@ def fwd_share_post_layer(self, x):
     outsA, outsB = lbA(outsA), lbB(outsB)
     outsA = accum_ab(outsA, outsB)
     return  mdl.post_block(outsA)
-    
+
+
+def fwd_layer_by_layer(self, x):
+    """layer blocks of the models are stacked onto the last model and trained"""
+    mdl = self.trainable
+    en_mdl = self.ensemble.model_list[-1]
+    en_layer_block_out = en_mdl.layer_block(en_mdl.pre_block(x))
+    mdl_layer_block_in = mdl.pre_block(x) * 0.0
+    # Use a matrix of zeros to match shape and append the layers.
+    mdl_layer_block_in = accum_ab(mdl_layer_block_in, en_layer_block_out)
+    mdl_layer_block_out = mdl.layer_block(mdl_layer_block_in)
+    mdl_post_block_out = mdl.post_block(mdl_layer_block_out)
+    return mdl_post_block_out
+
+
+def fwd_resnetconn(self, x):
+    """We add a resnet like connection x + f(x)"""
+    mdl = self.trainable
+    en_mdl = self.ensemble.model_list[-1]
+    en_layer_block_out = en_mdl.layer_block(en_mdl.pre_block(x))
+
+    mdl_layer_block_in = mdl.pre_block(x)
+    mdl_layer_block_in = accum_ab(mdl_layer_block_in, en_layer_block_out)
+    mdl_layer_block_out = mdl.layer_block(mdl_layer_block_in)
+    mdl_post_block_out = mdl.post_block(mdl_layer_block_out)
+    return mdl_post_block_out

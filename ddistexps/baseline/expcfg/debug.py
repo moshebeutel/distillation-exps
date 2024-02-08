@@ -6,9 +6,9 @@ EXPERIMENTS = {
             'worker_cfg': {
                 'resource_req': {'num_gpus': .25},
                 'world_size': 1,
-                'num_workers': 4,
+                'num_workers': 8,
             },
-            'gridgen': 'resnetgen',
+            'gridgen': 'resnetv3patchedgen',
             'dedup_policy': 'version',  # 'ignore' or 'version' (default)
         },
         # Following can be gridded
@@ -17,7 +17,6 @@ EXPERIMENTS = {
             'read_parallelism': 128,
         },
         'dispatch': ['baseline'],
-        'ckpt_file': None,
         'input_cfg': {'input_shape': (3, 32, 32)},
         'test_cfg': {'batch_size_gpu': 512},
         'train_cfg': {

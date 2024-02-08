@@ -6,7 +6,7 @@ EXPERIMENTS = {
             'worker_cfg': {
                 'resource_req': {'num_gpus': 1.0},
                 'world_size': 1,
-                'num_workers': 4,
+                'num_workers': 1,
             },
             'gridgen': 'resnetgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
@@ -19,9 +19,9 @@ EXPERIMENTS = {
         'dispatch': ['baseline'],
         'ckpt_file': None,
         'input_cfg': {'input_shape': (3, 64, 64)},
-        'test_cfg': {'batch_size_gpu': 512},
+        'test_cfg': {'batch_size_gpu': 128},
         'train_cfg': {
-            'num_epochs': [10],
+            'num_epochs': [50, 90],
             'batch_size_gpu': 32,
             'optim':[
                 {'name': 'adam', 'lr': 0.01, 'lr_scheduler': None,},

@@ -164,6 +164,14 @@ def load_mlflow_module(run_cfg):
         from ddist.models import ResidualCNN
         model_cls = ResidualCNN
         model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
+    elif 'ddist.models.resnet_cifar.ResNetv3' in model_cls:
+        from ddist.models.resnet_cifar import ResNetv3
+        model_cls = ResNetv3
+        model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
+    elif 'ddist.models.resnet_cifar.BasicResNetv2' in model_cls:
+        from ddist.models.resnet_cifarv1 import BasicResNetv2
+        model_cls = BasicResNetv2
+        model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
     else:
         raise ValueError("Unknown trunk:", model_cls)
     trunk = model_cls(**model_kwargs)

@@ -2,9 +2,9 @@ EXPERIMENTS = {
     'cifar10': {
         'meta': {
             'worker_cfg': {
-                'resource_req': {'num_gpus': 1.0/2.0},
+                'resource_req': {'num_gpus': 1.0/3.0},
                 'world_size': 1,
-                'num_workers': 4,
+                'num_workers': 3,
             },
             'gridgen': 'resnetgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
@@ -24,7 +24,6 @@ EXPERIMENTS = {
             'num_epochs': [30, 60],
             'batch_size_gpu': 128,
             'optim':[
-                {'name': 'adam', 'lr': 0.01, 'lr_scheduler': None,},
                 {'name': 'sgd', 'lr': 0.1, 'lr_scheduler': 'multistep',
                  'momentum': 0.9, 'weight_decay': 5e-4, 'lr_gamma': 0.2,
                  'lr_milestone_fracs': [.5, 0.75]},
@@ -34,7 +33,6 @@ EXPERIMENTS = {
                 {'name': 'sgd', 'lr': 0.1, 'lr_scheduler': 'multistep',
                  'momentum': 0.9, 'weight_decay': 5e-4, 'lr_gamma': 0.2,
                  'lr_milestone_fracs': [.4, 0.6]},
-                {'name': 'adam', 'lr': 0.005, 'lr_scheduler': 'cosine',},
             ],
             'transform': {
                 'global_shuffle': True,

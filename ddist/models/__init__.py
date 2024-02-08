@@ -11,7 +11,14 @@ class Identity(nn.Module):
 
     def forward(self, x): return x
 
+class Lambda(nn.Module):
+    def __init__(self, func):
+        super().__init__()
+        self.func = func
 
+    def forward(self, x):
+        return self.func(x)
+    
 class ResidualBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride=1):
         """

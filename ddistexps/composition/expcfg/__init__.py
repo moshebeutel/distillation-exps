@@ -5,7 +5,7 @@ from ddistexps.utils import load_mlflow_module
 from ddist.utils import namespace_to_dict
 from ddistexps.composition.gen_forwards import (
     fwd_noconnection, fwd_residual, fwd_share_all,
-    fwd_share_post_layer
+    fwd_share_post_layer, fwd_layer_by_layer, fwd_resnetconn,
 )
 
 from .debug import EXPERIMENTS as expdebug
@@ -22,16 +22,20 @@ CONNDICT = {
     'residual_error': fwd_residual,
     'share_all': fwd_share_all,
     'share_post_layer': fwd_share_post_layer,
+    'resnet_conn': fwd_resnetconn,
+    'layer_by_layer': fwd_layer_by_layer,
 }
 
 def resnetgen(in_H=32, in_W=32, out_dim=10):
     cands = {
         'fn': ResidualCNN,
         'kwargs': [
-            {'in_H': in_H, 'in_W': in_W, 'num_layers': 1, 'out_dim': out_dim,
-            'blocks_list': [1], 'emb_list': [16], 'stride_list': [1]},
             {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
             'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [1, 2]},
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 2, 'out_dim': out_dim,
+            'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [2, 2]},
+            {'in_H': in_H, 'in_W': in_W, 'num_layers': 3, 'out_dim': out_dim,
+            'blocks_list': [1, 1, 1], 'emb_list': [8, 8, 8], 'stride_list': [2, 2, 2]},
         ],
     }
     return cands

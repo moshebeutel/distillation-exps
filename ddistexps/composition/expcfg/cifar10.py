@@ -22,11 +22,11 @@ EXPERIMENTS = {
             },
             'conn_name': [
                 'noconn', 'residual_error', 'share_all',
-                'share_post_layer',
+                'share_post_layer', 'resnet_conn', 'layer_by_layer',
             ],
         },
         'train_cfg': {
-            'num_epochs': [50],
+            'num_epochs': [100],
             'batch_size_gpu': 128,
             'optim':[
                 {'name': 'sgd', 'lr': 0.1, 'lr_scheduler': 'multistep',
