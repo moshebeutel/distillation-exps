@@ -5,14 +5,7 @@ import csv
 import torch.nn as nn
 
 import ddist.models
-from ddist.models.resnet_cifar import resnet20 as resnet20cf10
-from ddist.models.resnet_cifar import resnet56 as resnet56cf10
 from ddist.models.clip import clip_vitb32
-from torchvision.models import resnet50 as resnet50imgnet
-from torchvision.models import resnet101 as resnet101imgnet
-from ddist.models.densenet_cifar import densenet121, densenet169
-from ddist.models.resnet_cifar import resnet56 as resnet56tin
-from ddist.models.resnet_cifar import resnet110 as resnet110tin
 from ddist.utils import CLog as lg
 from ddistexps.utils import load_mlflow_module
 
