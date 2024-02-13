@@ -14,8 +14,6 @@ EXPERIMENTS = {
             'data_set': 'TinyCIFAR10',
             'read_parallelism': 128,
         },
-        'dispatch': ['distillation'],
-        'ckpt_file': None,
         'input_cfg': {'input_shape': (3, 32, 32)},
         'test_cfg': {'batch_size_gpu': 512},
         'trunk_cfg': [
@@ -43,11 +41,11 @@ EXPERIMENTS = {
             },
             'use_amp': False,
             'loss_cfg': {
-                'distil_reg': [0.0,], 'xentropy_reg': [1.0],
+                'distil_reg': [1.0,], 'xentropy_reg': [1.0],
                 'temperature': [
                     { 'value': 1.0, 'gamma': 1.0, 'milestone_fracs': [1.0],},
-                    { 'value': .3, 'gamma': 1.0, 'milestone_fracs': [0.5, 0.9],},
-                    { 'value': 4.0, 'gamma': 0.5, 'milestone_fracs': [0.5, 9.0],},
+                    # { 'value': .3, 'gamma': 1.0, 'milestone_fracs': [0.5, 0.9],},
+                    # { 'value': 4.0, 'gamma': 0.5, 'milestone_fracs': [0.5, 9.0],},
                 ],
             },
         },

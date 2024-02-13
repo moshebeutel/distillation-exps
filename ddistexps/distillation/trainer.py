@@ -18,9 +18,11 @@ from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
 from ddist.utils import CLog as lg
 from ddist.dispatch import BaseMapper
 from ddistexps.utils import retrive_mlflow_run 
+from ddist.utils import namespace_to_dict
+from ddistexps.teachers import get_teacher_model
 
 
-class DistilTrainerLocal(BaseMapper):
+class DistilMapper_(BaseMapper):
     """
     Implements reduce ops on the mapper outputs.
     """
@@ -62,15 +64,7 @@ class DistilTrainerLocal(BaseMapper):
         return reduce_results_
 
 
-class DistilWorkerLocal(TorchDistributedWorker):
-    def __init__(self, name):
-        self.basename = name
-        self.name = name
-        lg.info("Starting trainer (worker):", name)
-
-    @staticmethod
-    def ready(): return True
-
+class DistilWorker_:
     @staticmethod
     def get_optimizer(optim_cfg, to_opt):
         optmzr = None
@@ -162,11 +156,21 @@ class DistilWorkerLocal(TorchDistributedWorker):
             'xentropy_loss': means[2].item(), 'ep_tempr': tempr
         }
         return ep_summary
-
+    
+    @staticmethod
+    def create_module_if_empty(payload):
+        if hasattr(payload, 'module'):
+            return payload
+        _kwargs = namespace_to_dict(payload.module_cfg.kwargs)
+        payload.module = payload.module_cfg.fn(**_kwargs)
+        return payload
+    
     @staticmethod
     def train(rank, world_size, payload, dfctrl):
         # Setup before training
         WL = DistilWorker 
+        payload.trunk = get_teacher_model(payload.trunk_cfg)
+        payload = WL.create_module_if_empty(payload)
         mlflow.set_experiment(experiment_name=payload.mlflow_expname)
         runid = payload.mlflow_runid
         device = ray_get_device()
@@ -217,7 +221,9 @@ class DistilWorkerLocal(TorchDistributedWorker):
             with mlflow.start_run(run_id=runid):
                 mlflow.log_metrics(info, step=train_cfg.num_epochs)
                 name = 'ep-' + str(train_cfg.num_epochs)
-                mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
+                X = torch.rand(1, *payload.input_cfg.input_shape)
+                # mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
+                mlflow.pytorch.log_model(model, name, input_example=X.numpy())
         return 
 
     @staticmethod
@@ -243,6 +249,8 @@ class DistilWorkerLocal(TorchDistributedWorker):
         total_s, correct_s = 0, 0
         if module is None:
             model = jpl.module
+        else:
+            model = module
         model.eval(); model.to(device)
         for batchidx, batch in enumerate(batch_iter):
             x_batch, y_batch = batch[x_key].to(device), batch[y_key].to(device)
@@ -258,14 +266,17 @@ class DistilWorkerLocal(TorchDistributedWorker):
             correct_s += correct.sum().item()
         return (correct_s, total_s)
 
+
 @ray.remote
-class DistilWorker(DistilWorkerLocal):
+class DistilMapper(DistilMapper_):
     """Syntatic sugar for local trainer. Remote trainers don't work with
     inheritance"""
     pass
 
 @ray.remote
-class DistilTrainer(DistilTrainerLocal):
+class DistilWorker(TorchDistributedWorker, DistilWorker_):
     """Syntatic sugar for local trainer. Remote trainers don't work with
     inheritance"""
-    pass
+    def __init__(self, name): pass
+
+

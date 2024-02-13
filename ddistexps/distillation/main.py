@@ -10,12 +10,11 @@ from argparse import ArgumentParser
 from rich import print as rr
 
 from ddist.data import get_dataset
-from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
+from ddist.utils import spec_to_prodspace, dict_to_namespace
 
 from ddistexps.utils import get_dataflow
-from ddistexps.teachers import get_teacher_model
 from ddistexps.distillation.expcfg import get_candgen, EXPERIMENTS
-from ddistexps.distillation.trainer import DistilTrainer
+from ddistexps.distillation.trainer import DistilMapper
 
 
 if __name__ == '__main__':
@@ -52,14 +51,9 @@ if __name__ == '__main__':
     rr("DF Actor ready:", ray.get(dfctrl.ready.remote()))
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
-    distildispatch_payloads = [p for p in payloads if p.dispatch == 'distillation']
-    distildispatch = DistilTrainer.remote(**dispatch_kwargs)
+    distildispatch = DistilMapper.remote(**dispatch_kwargs)
 
-    for p in payloads:
-        _kwargs = namespace_to_dict(p.module_cfg.kwargs)
-        p.module = p.module_cfg.fn(**_kwargs)
-        p.trunk = get_teacher_model(p.trunk_cfg)
-    distilref = distildispatch.train.remote(distildispatch_payloads)
+    distilref = distildispatch.train.remote(payloads)
     st_time = time.time()
     ray.get(distilref)
     info_ = {'experiment': expname, 'num_payloads': len(payloads),
