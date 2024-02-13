@@ -7,6 +7,7 @@ from argparse import Namespace
 from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
 
 from ddist.data import DataFlowControl
+from ddist.models import Composer
 from ddistexps.ftdistil.dataflow import AugDataFlow
 from ddist.utils import namespace_to_dict, flatten_dict
 from ddist.utils import CLog as lg
@@ -135,15 +136,29 @@ def load_mlflow_module(run_cfg):
         experiment_ids=[exp.experiment_id],
         filter_string=f'tags.mlflow.runName = "{run_name}"'
     )
+    if len(existing_runs) > 1:
+        # Pick the run with max version. We assume all duplicate runs are versioned.
+        version_tags = []
+        for run in existing_runs:
+            version = int(run.data.tags['auto-version'])
+            artifacts = [f.path for f in client.list_artifacts(run.info.run_id)]
+            ckpts = [f for f in artifacts if f.startswith('ep-')]
+            if len(ckpts) == 0:
+                version_tags.append(-1)
+            else:
+                version_tags.append(version)
+        if len(version_tags) == 0:
+            existing_runs = []
+        latest_version = np.argmax(version_tags)
+        existing_runs = [existing_runs[latest_version]]
     if len(existing_runs) == 0:
         raise ValueError(f"Invalid run_cfg config: {run_cfg}. No runs found.")
-    if len(existing_runs) > 1:
-        raise ValueError(f"Invalid run_cfg config: {run_cfg}. Multiple runs found.")
+
     run = existing_runs[0]
     artifacts = [f.path for f in client.list_artifacts(run.info.run_id)]
-    if len(artifacts) == 0:
-        raise ValueError(f"Invalid run_cfg config: {run_cfg}. No artifacts found.") 
     ckpts = [f for f in artifacts if f.startswith('ep-')]
+    if len(ckpts) == 0:
+        raise ValueError(f"No ckpts in run-cfg: {run_cfg} Artifacts: {artifacts}") 
     # Get last epoch checkpoint
     epochs = [int(f[len("ep-"):]) for f in ckpts]
     ckpt = 'ep-' + str(max(epochs))
@@ -163,6 +178,10 @@ def load_mlflow_module(run_cfg):
     if 'ddist.models.ResidualCNN' in model_cls:
         from ddist.models import ResidualCNN
         model_cls = ResidualCNN
+        model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
+    elif 'ddist.models.resnet_cifar.ResNetv3Patched' in model_cls:
+        from ddist.models.resnet_cifar import ResNetv3Patched
+        model_cls = ResNetv3Patched
         model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
     elif 'ddist.models.resnet_cifar.ResNetv3' in model_cls:
         from ddist.models.resnet_cifar import ResNetv3

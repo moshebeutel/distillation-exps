@@ -13,7 +13,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
 
 from ddist.utils import CLog as lg
-from ddistexps.utils import retrive_mlflow_run 
+from ddistexps.utils import (
+    retrive_mlflow_run, load_mlflow_run_module,
+)
+from ddistexps.teachers import get_teacher_model
 from ddistexps.distillation.trainer import DistilTrainerLocal, DistilWorkerLocal
 
 
@@ -45,12 +48,6 @@ class FineTuneTrainer(DistilTrainerLocal):
 class FineTuneWorker(DistilWorkerLocal):
 
     @staticmethod
-    def get_model_sd(payload):
-        artifact_uri = payload.pretrained_artifact_uri
-        sd = mlflow.pytorch.load_state_dict(artifact_uri)
-        return sd
-
-    @staticmethod
     def get_all_shifts_acc(rank, world_size, payload, dfctrl, split):
         TR = FineTuneWorker
         EASY_C_SHIFTS = ['brightness', 'contrast', 'defocus_blur', 'elastic_transform', 'fog', 'frost', 'gaussian_blur']
@@ -73,9 +70,12 @@ class FineTuneWorker(DistilWorkerLocal):
         mlflow.set_experiment(experiment_name=payload.mlflow_expname)
         runid = payload.mlflow_runid
         device = ray_get_device()
+        # Load all modules
+        run = mlflow.get_run(payload.src_run)
+        model, _ = load_mlflow_run_module(run)
+        trunk = get_teacher_model(payload.trunk_cfg)
+        payload.module, payload.trunk = model, trunk
         model, trunk = payload.module.to(device), payload.trunk.to(device)
-        sd = TR.get_model_sd(payload)
-        model.load_state_dict(sd)
         if (world_size > 1): 
             model = DDP(model)
 
@@ -91,6 +91,7 @@ class FineTuneWorker(DistilWorkerLocal):
         nepochs = train_cfg.num_epochs
         optmzr = TR.get_optimizer(optim_cfg, to_opt)
         lr_sched = TR.get_lr_sched(optim_cfg, optmzr, nepochs)
+
         # Pre-trained accuracy
         corr, tot = TR.testmodel(rank, world_size, payload, dfctrl, 'val')
         pval_acc = (corr / tot) * 100.0

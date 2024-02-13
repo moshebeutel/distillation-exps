@@ -201,7 +201,8 @@ class _BaselineTrainer(TorchDistributedWorker):
                 name = 'ep-' + str(train_cfg.num_epochs)
                 X = torch.rand(1, *payload.input_cfg.input_shape)
                 # mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
-                mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
+                # mlflow.pytorch.log_state_dict(model.state_dict().copy(), name)
+                mlflow.pytorch.log_model(model, name, input_example=X.numpy())
         return 
 
     @staticmethod

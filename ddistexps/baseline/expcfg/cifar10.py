@@ -2,7 +2,7 @@ EXPERIMENTS = {
     'cifar10': {
         'meta': {
             'worker_cfg': {
-                'resource_req': {'num_gpus': 0.5},
+                'resource_req': {'num_gpus': 1.0/3.0},
                 'world_size': 1,
                 'num_workers': 6,
             },

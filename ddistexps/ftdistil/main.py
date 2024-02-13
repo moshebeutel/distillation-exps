@@ -1,6 +1,12 @@
 # 
-#  Standard temperature based distillation
+# CLIP based fine tuning on pretrained models. We 
+# wish to understand the effect of CLIP supervised fine-tuning on
+# out of distribution performance at various FLOPS.
 #
+# 1. Programatically pick some models to fine-tune
+# 2. Fine-tune the models using CLIP supervised fine-tuning
+# 3. Evaluate the models on various OOD datasets
+
 import ray
 import os
 import time
@@ -8,75 +14,58 @@ import mlflow
 import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
-from rich import print as rr
+from rich import print
 
-from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict, flatten_dict
-from ddistexps.utils import get_dataflow
+from ddist.data import get_dataset
+from ddist.utils import (
+    spec_to_prodspace, dict_to_namespace
+)
+
+from ddistexps.utils import (
+    get_dataflow, load_mlflow_run_module
+)
+from ddistexps.teachers import get_teacher_model
 
 from ddistexps.ftdistil.trainer import FineTuneTrainer
-from ddistexps.ftdistil.teachers import Trunks
 from ddistexps.ftdistil.expcfg import EXPERIMENTS
-from ddistexps.ftdistil.expcfg import get_modulegrid
 
-def pick_valid_artifact_uri(source_payload, allrun_df):
-    from mlflow.tracking.client import MlflowClient
-    source_dict = namespace_to_dict(source_payload.module_cfg.kwargs)
-    sdict = {'module_cfg.kwargs.'+k: v for k,v in source_dict.items()}
-    msk = None
-    def is_equal(val1, val2):
-        val2 = str(val2)
-        return val1 == val2
 
-    for k, v in sdict.items():
-        if msk is None:
-            msk = allrun_df[k].map(lambda x: is_equal(x, v))
-        else:
-            msk2 = allrun_df[k].map(lambda x: is_equal(x, v))
-            msk = msk & msk2
-        if np.sum(msk) == 0:
-            raise ValueError(f"No valid runs found for {k}={v}")
-    df = allrun_df[msk]
-    df = df.sort_values(by='val_acc', ascending=False)
-    # Inspect each run and pick first that has a valid state_dict
-    artifact_uri = None
-    for runid in df.run_id:
-        run = mlflow.get_run(runid)
-        exp = mlflow.get_experiment(run.info.experiment_id)
-        artifacts = [f.path for f in MlflowClient().list_artifacts(run.info.run_id)]
-        if len(artifacts) == 0:
-            continue
-        ckpt = [f for f in artifacts if f.startswith('ep-')][-1]
-        artifact_uri = str(run.info.artifact_uri) + '/' + ckpt
-        sd = mlflow.pytorch.load_state_dict(artifact_uri)
-        break
-    if artifact_uri is None:
-        raise ValueError("No artifacts could be downloaded")
-    return artifact_uri
+def get_pretrained_runs(src_exp_names, nclusters=8, nmodels_per_cluster=2):
+    """Cluster the models based on FLOPS and validation accuracy.
+    Pick the top nmodels_per_cluster from each cluster.
 
-def attach_pretrained_runs(payloads):
-    # Get all possible runs from mlflow registry
-    SOURCE_EXPS = ['baseline/cifar10', 'distillation/distil-cifar10']
-    from mlflow.tracking.client import MlflowClient
-    client = MlflowClient()
-    exp_ids = []
+    Returns list of picked runs.
+    """
+    SOURCE_EXPS = src_exp_names
+    # Get all the runs from these experiments. We assume `flops` have already
+    # been populated for these.
+    all_exp_ids = []
     for expname in SOURCE_EXPS:
-        exp = client.get_experiment_by_name(expname)
-        if exp is not None:
-            exp_ids.append(exp.experiment_id)
-        else:
-            raise ValueError(f"Experiment {expname} not found")
-    runs = client.search_runs(experiment_ids=exp_ids)
-    # Create a dataframe with module_kwargs, run_id and val_acc
-    kwargs_keys = [k for k in runs[0].data.params.keys() if k.startswith('module_cfg.kwargs')]
-    dfdict =  {k: [r.data.params[k] for r in runs] for k in kwargs_keys} | {
-        'run_id': [r.info.run_id for r in runs],
-        'val_acc': [r.data.metrics['val_acc'] for r in runs],
-    }
-    df = pd.DataFrame(dfdict)
-    for pld in payloads:
-        artifact_uri = pick_valid_artifact_uri(pld, df)
-        pld.pretrained_artifact_uri = artifact_uri
-    return payloads
+        print("Getting experiment:", expname)
+        eid = mlflow.get_experiment_by_name(expname).experiment_id
+        all_exp_ids.append(eid)
+
+    all_runs_df = mlflow.search_runs(experiment_ids=all_exp_ids, max_results=10000,
+                                     filter_string="attributes.status = 'FINISHED'")
+    data1 = all_runs_df[['run_id', 'metrics.flops', 'metrics.val_acc', 'metrics.train_duration']]
+    # Remove rows with NaN
+    data1 = data1.dropna()
+    data1.columns = ['runid', 'flops', 'val_acc', 'train_duration']
+    from sklearn.cluster import KMeans
+    kmean = KMeans(n_clusters=nclusters)
+    kmean.fit(data1[['flops', 'val_acc']])
+    # Set cluster ids so that they are in order of flops
+    centers = kmean.cluster_centers_
+    centers = centers[np.argsort(centers[:, 0])]
+    kmean.cluster_centers_ = centers
+    data1['cluster'] = kmean.predict(data1[['flops', 'val_acc']])
+
+    fn = lambda x: x.nlargest(nmodels_per_cluster, 'val_acc')
+    cluster_models = data1.groupby('cluster').apply(fn)
+    cluster_models = cluster_models.reset_index(drop=True)
+    retvals = cluster_models['runid'].values
+    return list(retvals)
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -90,39 +79,41 @@ if __name__ == '__main__':
     expname = 'ftdistil/' + expname
     spec['mlflow_expname'] = [expname]
     meta = spec['meta']
-    module_grid = get_modulegrid(meta, 100 if 'cifar100' in expname else 10)
-    spec['module_cfg'] = module_grid
+    src_run_grid = get_pretrained_runs(meta['src_exp_names'][0]) 
+    spec['src_run'] = src_run_grid
+    
+    dataset = spec['dataflow']['data_set']
+    ds_meta = get_dataset(dataset).metadata
+
     prod_space = spec_to_prodspace(**spec)
     payloads = [dict_to_namespace(p) for p in prod_space]
     meta = dict_to_namespace(meta)
-    # Attach the runid for the pretrained model to use for each payload.
-    payloads = attach_pretrained_runs(payloads)
-    # Set environment variable RAY_ADDRESS to use a pre-existing cluster
+
     dfnamespace = 'FDistilDataFlow'
     ray.init(namespace=dfnamespace)
     tracking_uri = os.environ['MLFLOW_TRACKING_URI']
     mlflow.set_tracking_uri(tracking_uri)
-    rr("[green bold] Connecting to mlflow using:", tracking_uri)
+    print("[green bold] Connecting to mlflow using:", tracking_uri)
 
     dflow = prod_space[0]['dataflow']
     ref = get_dataflow.remote(dflow, meta.worker_cfg.world_size,
                               engine='augmented')
     dfctrl = ray.get(ref)
-    rr("DF Actor ready:", ray.get(dfctrl.ready.remote()))
+    print("DF Actor ready:", ray.get(dfctrl.ready.remote()))
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
     dispatch = FineTuneTrainer.remote(**dispatch_kwargs)
-    trunks = Trunks()
-    for p in payloads:
-        _kwargs = namespace_to_dict(p.module_cfg.kwargs)
-        p.module = p.module_cfg.fn(**_kwargs)
-        p.trunk = trunks(p.trunk_cfg)
-    finetune_payloads = [p for p in payloads if p.dispatch == 'finetune']
-    rr("Starting Finetune-Dispatch")
-    wlref = dispatch.finetune.remote(finetune_payloads)
+    # for p in payloads:
+    #     # Load the model from run and attach the teacher.
+    #     run = mlflow.get_run(p.src_run)
+    #     module, _ = load_mlflow_run_module(run)
+    #     p.module = module
+    #     p.trunk = get_teacher_model(p.trunk_cfg)
+    print("Starting Finetune-Dispatch")
+    wlref = dispatch.finetune.remote(payloads)
     st_time = time.time()
     ray.get(wlref)
     info_ = {'experiment': expname, 'num_payloads': len(payloads),
             'total-duration': time.time() - st_time}
-    rr("Experiment completed:", info_)
+    print("Experiment completed:", info_)
 

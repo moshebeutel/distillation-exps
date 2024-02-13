@@ -1,4 +1,5 @@
 from ddist.models import ResidualCNN
+from ddist.models.resnet_cifar import ResNetv3Patched
 from .cifar10 import EXPERIMENTS as expscf10
 from .cifar100 import EXPERIMENTS as expscf100
 from .debug import EXPERIMENTS as expdebug
@@ -49,12 +50,20 @@ def resnetgen(in_H=32, in_W=32, out_dim=10):
     }
     return cands
 
+def resnetv3patchedgen(in_H=32, in_W=32, out_dim=10):
+    cands = {
+        'fn': ResNetv3Patched,
+        'kwargs': {'depth': [20, 32, 44, 56, 110], 'num_classes': out_dim}
+    }
+    return cands
 
 def get_candgen(meta, ds_meta):
     in_H, in_W = ds_meta['image_dims'][1:]
     outdim = ds_meta['num_labels']
     if meta['gridgen'] in ['resnetgen']:
         grid_records = resnetgen(in_H, in_W, outdim)
+    elif meta['gridgen'] in ['resnetv3patchedgen']:
+        grid_records = resnetv3patchedgen(in_H, in_W, outdim)
     else:
         raise ValueError(meta['gridgen'])
     return grid_records

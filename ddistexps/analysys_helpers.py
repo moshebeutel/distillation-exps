@@ -39,6 +39,7 @@ def fetch_valid_runs(expnames, acc_threshold=20.0):
     metricsdf = pd.DataFrame(metrics)
     metricsdf['runid'] = [r.info.run_id for r in existing_runs]
     valid_runs = metricsdf[metricsdf['val_acc'] > acc_threshold]
+    print(f"Found {len(valid_runs)} valid runs")
     validrunids = valid_runs['runid']
     validruns = [MlflowClient().get_run(runid) for runid in validrunids]
     return validruns

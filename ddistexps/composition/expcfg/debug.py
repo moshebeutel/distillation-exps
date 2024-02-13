@@ -6,7 +6,7 @@ EXPERIMENTS = {
                 'world_size': 1,
                 'num_workers': 3,
             },
-            'gridgen': 'resnetgen',
+            'gridgen': 'resnetv3patchedgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
         },
         # Following can be gridded
@@ -16,14 +16,12 @@ EXPERIMENTS = {
         'trunk_cfg': [
             { 'expname': 'baseline/cifar10', 'runname': 'debonair-ray-624'},
         ],
-        'compose_cfg': {
-            'src_run_cfg': {
-                'expname': 'baseline/cifar10',
-                'runname': 'glamorous-foal-579',
-            },
-            'conn_name': [
-                'layer_by_layer', 'resnet_conn',
+        'compose_cfg':{
+            'src_run_cfg': [
+                {'expname': 'baseline/cifar10', 'runname': 'glamorous-foal-579',},
+                {'expname': 'distillation/cifar10', 'runname': 'bittersweet-mare-631',},
             ],
+            'conn_name': [ 'layer_by_layer' ],
         },
         'train_cfg': {
             'num_epochs': [3],

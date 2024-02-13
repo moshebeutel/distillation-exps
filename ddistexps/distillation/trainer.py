@@ -241,9 +241,7 @@ class DistilWorkerLocal(TorchDistributedWorker):
         schema = ray.get(dfctrl.get_data_schema.remote())
         x_key, y_key = schema['x_key'], schema['y_key']
         total_s, correct_s = 0, 0
-        if module is not None:
-            model = module
-        else:
+        if module is None:
             model = jpl.module
         model.eval(); model.to(device)
         for batchidx, batch in enumerate(batch_iter):
