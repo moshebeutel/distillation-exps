@@ -4,7 +4,7 @@ EXPERIMENTS = {
             'worker_cfg': {
                 'resource_req': {'num_gpus': 1.0/3.0},
                 'world_size': 1,
-                'num_workers': 3,
+                'num_workers': 12,
             },
             'gridgen': 'resnetv3patchedgen',
             'dedup_policy': 'ignore',  # 'ignore' or 'version' (default)
@@ -21,7 +21,7 @@ EXPERIMENTS = {
                 {'expname': 'baseline/cifar10', 'runname': 'glamorous-foal-579',},
                 {'expname': 'distillation/cifar10', 'runname': 'bittersweet-mare-631',},
             ],
-            'conn_name': [ 'layer_by_layer' ],
+            'conn_name': ['layer_by_layer', 'noconn'],
         },
         'train_cfg': {
             'num_epochs': [3],

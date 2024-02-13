@@ -12,10 +12,9 @@ from rich import print as rr
 from ddist.data import get_dataset
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 
-from ddistexps.utils import get_dataflow, get_composed_model
-from ddistexps.teachers import get_teacher_model
+from ddistexps.utils import get_dataflow
 from ddistexps.composition.expcfg import get_candgen, EXPERIMENTS
-from ddistexps.composition.trainer import ComposeTrainer
+from ddistexps.composition.trainer import ComposeMapper
 
 
 if __name__ == '__main__':
@@ -52,12 +51,8 @@ if __name__ == '__main__':
     rr("DF Actor ready:", ray.get(dfctrl.ready.remote()))
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
-    for p in payloads:
-        p.trunk = get_teacher_model(p.trunk_cfg)
-        p.module = get_composed_model(p.input_cfg, p.module_cfg,
-                                      p.compose_cfg)
-    cdispatch = ComposeTrainer.remote(**dispatch_kwargs)
-    resultsref = cdispatch.train.remote(payloads)
+    cdispatch = ComposeMapper.remote(**dispatch_kwargs)
+    resultsref = cdispatch.composetrain.remote(payloads)
     st_time = time.time()
     ray.get(resultsref)
     info_ = {'experiment': expname, 'num_payloads': len(payloads),

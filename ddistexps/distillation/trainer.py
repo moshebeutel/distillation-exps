@@ -26,16 +26,17 @@ class DistilMapper_(BaseMapper):
     """
     Implements reduce ops on the mapper outputs.
     """
-    def __init__(self, dfctrl, worker_cfg):
+    def __init__(self, dfctrl, worker_cfg, worker_actor_cls):
         self.dfctrl = dfctrl
-        super().__init__(DistilWorker, worker_cfg.resource_req,
+        self.worker_actor_cls = worker_actor_cls
+        super().__init__(self.worker_actor_cls, worker_cfg.resource_req,
                          worker_cfg.world_size, worker_cfg.num_workers)
 
     def train(self, payloads):
         lg.info(f"Multi-train started with {len(payloads)} candidate payloads")
         dfctrl = self.dfctrl
         fn_args = {'dfctrl': dfctrl}
-        fn = DistilWorker.train
+        fn = self.worker_actor_cls.train
         new_work = []
         for payload in payloads:
             ret = retrive_mlflow_run(payload, payload.mlflow_expname)
@@ -52,7 +53,7 @@ class DistilMapper_(BaseMapper):
     def testmodel(self, payloads, split='train'):
         dfctrl = self.dfctrl
         fn_args = {'split': split, 'dfctrl': dfctrl}
-        fn = DistilWorker.testmodel
+        fn = self.worker_actor_cls.testmodel
         map_results = self.map_workers(payloads, fn, fn_args)
         reduce_results_ = []
         for vals in map_results:
@@ -271,7 +272,9 @@ class DistilWorker_:
 class DistilMapper(DistilMapper_):
     """Syntatic sugar for local trainer. Remote trainers don't work with
     inheritance"""
-    pass
+    def __init__(self, *args, **kargs):
+        super().__init__(*args, **kargs, worker_actor_cls=DistilWorker)
+
 
 @ray.remote
 class DistilWorker(TorchDistributedWorker, DistilWorker_):
