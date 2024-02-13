@@ -198,10 +198,13 @@ def load_mlflow_module(run_cfg):
     return trunk, run.info.run_id
 
 
-def profile_module(device, mdl_or_mdl_list, inp_shape, stats='flops'):
+def profile_module(device, mdl_or_mdl_list, inp_shape, stats='flops', batched_inp_shape=False):
     mdl_list = mdl_or_mdl_list
     if type(mdl_list) is not list: mdl_list = [mdl_list]
-    inp_shape = (1,) + inp_shape
+
+    if batched_inp_shape is False:
+        inp_shape = (1,) + inp_shape
+    
     x = torch.tensor(np.ones(inp_shape)).float()
     x = x.to(device)
     # Execute once to make sure everything is initialized

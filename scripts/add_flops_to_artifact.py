@@ -1,3 +1,4 @@
+# Load the latest saved artifact for all runs and profile the model to get the flops.
 import mlflow
 import torch
 import pandas as pd
