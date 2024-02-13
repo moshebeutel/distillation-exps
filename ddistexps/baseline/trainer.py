@@ -19,14 +19,14 @@ from ddistexps.utils import retrive_mlflow_run
 
 
 @ray.remote
-class BaselineTrainer(BaseMapper):
+class BaselineReducer(BaseMapper):
     """
     Implements reduce ops on the mapper outputs.
     """
 
     def __init__(self, dfctrl, worker_cfg):
 
-        super().__init__(_BaselineTrainer, worker_cfg.resource_req,
+        super().__init__(BaselineWorker, worker_cfg.resource_req,
                          worker_cfg.world_size, worker_cfg.num_workers)
         self.dfctrl = dfctrl
 
@@ -34,7 +34,7 @@ class BaselineTrainer(BaseMapper):
         lg.info(f"Multi-train started with {len(payloads)} candidate payloads")
         dfctrl = self.dfctrl
         fn_args = {'dfctrl': dfctrl}
-        fn = _BaselineTrainer.train
+        fn = BaselineWorker.train
         new_work = []
         for payload in payloads:
             # Setup payload.mlflow_runid
@@ -52,7 +52,7 @@ class BaselineTrainer(BaseMapper):
     def testmodel(self, payloads, split='train'):
         dfctrl = self.dfctrl
         fn_args = {'split': split, 'dfctrl': dfctrl}
-        fn = _BaselineTrainer.testmodel
+        fn = BaselineWorker.testmodel
         map_results = self.map_workers(payloads, fn, fn_args)
         reduce_results_ = []
         for ref in map_results:
@@ -66,12 +66,9 @@ class BaselineTrainer(BaseMapper):
 
 
 @ray.remote
-class _BaselineTrainer(TorchDistributedWorker):
-
+class BaselineWorker(TorchDistributedWorker):
     def __init__(self, name):
-        self.basename = name
         self.name = name
-        lg.info("Starting worker: ", name)
 
     def ready(self): return True
 
@@ -141,6 +138,13 @@ class _BaselineTrainer(TorchDistributedWorker):
         mean_epoch_loss = tot_loss / batches
         return mean_epoch_loss
 
+    @staticmethod
+    def create_module_if_empty(payload):
+        if hasattr(payload, 'module'):
+            return payload
+        _kwargs = namespace_to_dict(payload.module_cfg.kwargs)
+        payload.module = payload.module_cfg.fn(**_kwargs)
+        return payload
 
     @staticmethod
     def train(rank, world_size, payload, dfctrl):
@@ -148,7 +152,8 @@ class _BaselineTrainer(TorchDistributedWorker):
         Accelerated SGD based optimization. Train arguments are configured as
         part of the class-initialization in self.train-args
         '''
-        _BL = _BaselineTrainer
+        _BL = BaselineWorker
+        payload = _BL.create_module_if_empty(payload)
         # We only start if this is a new run.
         mlflow.set_experiment(experiment_name=payload.mlflow_expname)
         runid = payload.mlflow_runid
@@ -156,7 +161,6 @@ class _BaselineTrainer(TorchDistributedWorker):
         model = payload.module.to(device)
         if (world_size > 1): 
             model = DDP(model)
-
         # Data Optimizer, lr-scheduler and criterion
         train_cfg = payload.train_cfg
         data_schema = ray.get(dfctrl.get_data_schema.remote())
@@ -178,7 +182,7 @@ class _BaselineTrainer(TorchDistributedWorker):
                     data_schema, 'payload': payload, 'optimizer': optmzr,
                     'loss_fn':lossfn}
             start_time = time.time()
-            mean_loss = _BaselineTrainer._epoch(**_eps)
+            mean_loss = BaselineWorker._epoch(**_eps)
             end_time = time.time()
             lr_sched.step()
             _info = {'epoch_loss': mean_loss, 'epoch_duration': end_time-start_time}

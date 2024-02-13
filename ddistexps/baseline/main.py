@@ -9,7 +9,7 @@ from rich import print as rr
 from ddist.data import get_dataset
 from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 
-from ddistexps.baseline.trainer import BaselineTrainer as BLTrainer
+from ddistexps.baseline.trainer import BaselineReducer
 from ddistexps.baseline.expcfg import EXPERIMENTS
 from ddistexps.baseline.expcfg import get_candgen
 from ddistexps.utils import get_dataflow
@@ -48,12 +48,8 @@ if __name__ == '__main__':
     rr("DF Actor ready:", ray.get(dfctrl.ready.remote()))
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
-    # Create trainer + dispatcher
-    bldispatch = BLTrainer.remote(**dispatch_kwargs)
-    # Attach a model to each payload
-    for p in payloads:
-        _kwargs = namespace_to_dict(p.module_cfg.kwargs)
-        p.module = p.module_cfg.fn(**_kwargs)
+    # Create trainer and dispatch the training
+    bldispatch = BaselineReducer.remote(**dispatch_kwargs)
     ref = bldispatch.train.remote(payloads)
     st_time = time.time()
     # Wait for training and logging to complete
