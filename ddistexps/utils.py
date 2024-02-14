@@ -4,16 +4,51 @@ import numpy as np
 import hashlib
 import torch
 from argparse import Namespace
+from rich import print as rr
+
 from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
+
 import mlflow
 from mlflow.tracking.client import MlflowClient
 
 from ddist.data import DataFlowControl
 from ddist.models import Composer
-from ddistexps.ftdistil.dataflow import AugDataFlow
-from ddist.utils import namespace_to_dict, flatten_dict
-from ddist.utils import CLog as lg
 
+from ddist.utils import (
+    spec_to_prodspace, dict_to_namespace, namespace_to_dict,
+    flatten_dict
+)
+
+
+def get_persistent_actor(actor_name, actor_class, actor_kwargs, persist=True):
+    """Returns a ray actor in persistent mode. If the actor already exists
+    then it returns the existing actor. If the actor does not exist, then it
+    creates a new actor with the specified name and class."""
+    try:
+        actor = ray.get_actor(actor_name)
+        rr("[green bold] Found existing actor:", actor_name, "-->", actor)
+    except ValueError:
+        msg = f"[red bold] No existing actor found. "
+        if persist is True:
+            opts ={'lifetime': 'detached', 'name': actor_name}
+        else:
+            opts = {'name': actor_name}
+        rr(msg + " Creating detached actor:", opts)
+        actor_fn = actor_class.options(**opts).remote
+        actor = actor_fn(**actor_kwargs)
+    return actor
+
+@ray.remote
+def get_dataflow(df_kwargs, engine='default'):
+    # Create Dataflow
+    df_actor_name = f"DF-{df_kwargs['ds_name']}"
+    enginecls = DataFlowControl
+    if engine not in ['default', 'augmented']:
+        raise ValueError(f"Invalid dataflow: {engine}")
+    if engine in ['augmented']:
+        enginecls = AugDataFlow
+    dfctrl = get_persistent_actor(df_actor_name, enginecls, df_kwargs)
+    return dfctrl
 
 def param_hash(cfg):
     cfgstr = ''.join([f'{k}={cfg[k]}\n' for k in sorted(cfg.keys())]).strip()
@@ -21,92 +56,76 @@ def param_hash(cfg):
     cfghash = cfghash.hexdigest()
     return cfgstr, cfghash
 
-def retrive_mlflow_run(payload, expname):
+
+def get_existing_runs_in_exp(run_cfg, expname):
     """
-    Creates a new run and returns it. If another run with the same set of
-    parameters already exists, then we retain the name but add a version number
-    to it.
-
-    Returns: (is_new_run, run_id)
-
-    version: If a run with the same set of parameters already exists, then we
-        retain the name but add a version number to it.
-    ignore: If a run with the same set of parameters already exists, then we
-        ignore it and create a new run with a new name.
+    Returns a list of runs with the same parameters as the run_cfg in the
+    current experiment.
 
     We compare two runs by
         1. converting the namespace to a dictionary, and flattening the dictionary,
         2. We then stringify the flattened dictionary,
         3. computing the md5 hash of the string, compare.
-    """
-    dedup_policy = payload.meta.dedup_policy
-    meta = payload.meta
-    del payload.meta # Don't create hash with meta
-    if dedup_policy not in ['version', 'ignore']: raise ValueError(dedup_policy)
-    try:
-        currid = payload.mlflow_runid
-    except AttributeError:
-        currid = None
-    if currid is not None:
-        return False, currid
 
+    All parameters except the 'meta' are used to compute the hash.
+    """
+    # Creates the experiment if it does not exist
     exp = mlflow.set_experiment(experiment_name=expname)
-    # will exclude module and trunk
-    cfg = flatten_dict(namespace_to_dict(payload))
+    # Remove the meta parameteres
+    run_ = namespace_to_dict(run_cfg)
+    del run_['meta']
+    cfg = flatten_dict(run_)
     cfgstr, cfghash = param_hash(cfg)
     query = f"params.param_hash = '{cfghash}'"
     existing_runs = MlflowClient().search_runs(
         experiment_ids=[exp.experiment_id],
         filter_string=query,
     )
-    vtagsd = {r.data.tags['auto-version']: r.info.run_id for r in existing_runs}
-    vtagsl = list(vtagsd.keys())
-    runname = None if len(vtagsl) == 0 else existing_runs[0].data.tags['mlflow.runName']
-    curr_vid = 0 if len(vtagsl) == 0 else (max([int(x) for x in vtagsl]) + 1)
-    if curr_vid > 0 and dedup_policy == 'ignore':
-        _v = max([int(x) for x in vtagsl])
-        return False, vtagsd[str(_v)]
-    _tags = {'auto-version': str(curr_vid)}
-    with mlflow.start_run(run_name=runname, tags=_tags) as run:
-        payload.mlflow_runid = run.info.run_id
-        meta_d = {'meta.'+k:v for k, v in flatten_dict(namespace_to_dict(meta)).items()}
-        cfg = cfg | meta_d
-        cfg['param_hash'] = cfghash
-        mlflow.log_params(cfg)
-        mlflow.log_text(cfgstr, 'param_str.txt')
-    return True, payload.mlflow_runid
+    for run in existing_runs:
+        # We need to maintain a param_hash for all_runs.
+        # This means deduplicate_runs was not called.
+        assert run.data.params['param_hash']
+    return existing_runs, cfghash
 
+def deduplicate_runs(run_cfg_list, expname, policy='skip'):
+    if policy not in ['recreate', 'skip', 'continue']:
+        raise ValueError(f"Invalid policy: {policy}")
+    deduped = []
+    for run_cfg in run_cfg_list:
+        existing_runs, cfghash = get_existing_runs_in_exp(run_cfg, expname)
+        if len(existing_runs) > 0 and policy == 'skip':
+            # rr("[yellow] Skipping existing run:", cfghash)
+            continue
+        # Either existing_runs == 0, or policy in ['createnew', 'continue']
+        # The trainer has to handle continue. We add the cfghash
+        run_cfg.param_hash = cfghash
+        deduped.append(run_cfg)
+    return deduped
 
-def get_persistent_actor(actor_name, actor_class, actor_kwargs, persist=True):
-    try:
-        actor = ray.get_actor(actor_name)
-        lg.info("[green bold] Found existing actor:", actor_name, "-->", actor)
-    except ValueError:
-        msg = f"[red bold] No existing actor found. "
-        if persist is True:
-            opts ={'lifetime': 'detached', 'name': actor_name}
-        else:
-            opts = {'name': actor_name}
-        lg.info(msg + " Creating detached actor:", opts)
-        actor_fn = actor_class.options(**opts).remote
-        actor = actor_fn(**actor_kwargs)
-    return actor
+def setup_experiment(spec, expname, dfnamespace='DataFlow'):
+    """
+    Given a spec from expcfg/, this function sets up the experiment by
+        1. Creating the product space of parameters
+        2. Applying the deduplication policy.
+        3. Create the dataflow
+        4. Connect to mlflow and ray.
 
-@ray.remote
-def get_dataflow(args, world_size, engine='default'):
-    # Create Dataflow
-    dataflow_args = {
-        'ds_name': args.data_set, 'ddp_world_size': world_size,
-        'read_parallelism': args.read_parallelism,
-    }
-    df_actor_name = f"DF-{args.data_set}"
-    enginecls = DataFlowControl
-    if engine not in ['default', 'augmented']:
-        raise ValueError(f"Invalid dataflow: {engine}")
-    if engine in ['augmented']:
-        enginecls = AugDataFlow
-    dfctrl = get_persistent_actor(df_actor_name, enginecls, dataflow_args)
-    return dfctrl
+        Returns: run_cfg_list, dfctrl
+    """
+    ray.init(namespace=dfnamespace)
+    meta = dict_to_namespace(spec['meta'])
+    
+    dfargs = spec['dataflow']
+    dfargs['ddp_world_size'] = meta.worker_cfg.world_size
+    dfctrl = ray.get(get_dataflow.remote(dfargs))
+    rr("DF Actor ready:", ray.get(dfctrl.ready.remote()))
+
+    prod_space = spec_to_prodspace(**spec)
+    run_cfgs = [dict_to_namespace(p) for p in prod_space]
+    newruns = deduplicate_runs(run_cfgs, expname, meta.dedup_policy) 
+    rr(f"Deduplication policy:{meta.dedup_policy}: {len(run_cfgs)} --> {len(newruns)}")
+    return meta, newruns, dfctrl
+
 
 def load_mlflow_module(runid):
     run = MlflowClient().get_run(runid)

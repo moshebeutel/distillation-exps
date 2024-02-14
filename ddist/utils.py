@@ -398,19 +398,17 @@ def flatten_dict(dictionary, parent_key='', separator='.'):
             items.append((new_key, value))
     return dict(items)
 
-def namespace_to_dict(args, depth_limit=6, exclude=['module', 'trunk']):
+def namespace_to_dict(args, depth_limit=6):
     """Recursively convert namespace object to dict object"""
     if depth_limit == 0:
-        return args
-    args1 = args
+        return eval(args)
     if type(args) not in [dict]:
-        args1 = dict(vars(args))
-    args = {k:v for k, v in args1.items() if k not in exclude}
+        args = dict(vars(args))
     for key in args.keys():
-        if key in exclude: continue
+        # if key in exclude: continue
         if isinstance(args[key], Namespace):
             args[key] = namespace_to_dict(args[key], depth_limit-1)
-    return args 
+    return args
 
 def dict_to_namespace(args, depth_limit=6):
     """Recursively convert dict object to namespace"""

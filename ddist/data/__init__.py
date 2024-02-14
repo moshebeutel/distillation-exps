@@ -21,6 +21,10 @@ from ddist.data.preprocessors import (
     BasicImageTransforms,
 )
 
+def get_dataset_metadata(dataset_name):
+    ds_class = get_dataset(dataset_name)
+    return ds_class.metadata
+
 def get_dataset(dataset_name):
     if dataset_name == 'RangeDS':
         return RangeDataset 

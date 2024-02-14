@@ -83,7 +83,8 @@ class BaseMapper:
                 return groupname, None
         return self._wait()
 
-    def map_workers(self, payloads, fn, fn_kwargs):
+    def map_workers(self, payloads, fn, fn_kwargs, setup_fn=None, setup_kwargs={},
+                    teardown_fn=None, teardown_kwargs={}):
         """Will map function over jobpayload provided in `jobpayloads` list. The
         fn_kwargs will be passed on as keyword arguments.
 
@@ -104,10 +105,14 @@ class BaseMapper:
             if fetch is not None:
                 self._group_is_working_on[grpname] = None
                 payloadname, result = fetch
+                if teardown_fn is not None:
+                    result = teardown_fn(result, **teardown_kwargs)
                 payload_results[payloadname] = result
+                
             wgroup = self._groups[grpname]
             _kwargs = {'fn': fn, 'fn_kwargs': fn_kwargs,
-                       'payloadname': payload_name, 'payload': jpl}
+                       'payloadname': payload_name, 'payload': jpl,
+                       'setup_fn': setup_fn, 'setup_kwargs': setup_kwargs}
             ray.get(wgroup.start.remote(**_kwargs))
             self._group_is_working_on[grpname] = payload_name
         while True:
@@ -119,6 +124,8 @@ class BaseMapper:
                 continue
             payloadname, result = fetch
             assert payloadname not in payload_results.keys()
+            if teardown_fn is not None:
+                result = teardown_fn(result, **teardown_kwargs)
             payload_results[payloadname] = result
             self._group_is_working_on[grpname] = None
         results = []
@@ -142,7 +149,10 @@ class _Group:
         self.__payloadname = None
         self.__result_is_ready = False
 
-    def start(self, payload, payloadname, fn, fn_kwargs):
+    def start(self, payload, payloadname, fn, fn_kwargs, setup_fn=None, setup_kwargs={}):
+        if setup_fn is not None:
+            payload = setup_fn(payload, **setup_kwargs)
+            
         ddp_mode = len(self.workers) > 1
         wgroup = self.workers
         self.__result_is_ready = False

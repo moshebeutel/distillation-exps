@@ -33,7 +33,8 @@ def resnetv3gen(in_H=32, in_W=32, out_dim=10):
 def resnetv3patchedgen(in_H=32, in_W=32, out_dim=10):
     cands = {
         'fn': ResNetv3Patched,
-        'kwargs': {'depth': [8, 14, 20, 32, 44, 98, 110], 'num_classes': out_dim}
+        # 'kwargs': {'depth': [8, 14, 20, 32, 44, 98, 110], 'num_classes': out_dim}
+        'kwargs': {'depth': [8], 'num_classes': out_dim}
     }
     return cands
 
@@ -77,17 +78,17 @@ def resnetgen(in_H=32, in_W=32, out_dim=10):
     }
     return cands
 
-def get_candgen(meta, ds_meta):
+def get_candgen(gridgen, ds_meta):
     in_H, in_W = ds_meta['image_dims'][1:]
     outdim = ds_meta['num_labels']
-    if meta['gridgen'] in ['resnetgen']:
+    if gridgen in ['resnetgen']:
         grid_records = resnetgen(in_H, in_W, outdim)
-    elif meta['gridgen'] in ['resnetv2gen']:
+    elif gridgen in ['resnetv2gen']:
         grid_records = resnetv2gen(in_H, in_W, outdim)
-    elif meta['gridgen'] in ['resnetv3gen']:
+    elif gridgen in ['resnetv3gen']:
         grid_records = resnetv3gen(in_H, in_W, outdim)
-    elif meta['gridgen'] in ['resnetv3patchedgen']:
+    elif gridgen in ['resnetv3patchedgen']:
         grid_records = resnetv3patchedgen(in_H, in_W, outdim)
     else:
-        raise ValueError(meta['gridgen'])
+        raise ValueError(gridgen)
     return grid_records
