@@ -22,7 +22,7 @@ all_runs = MlflowClient().search_runs(experiment_ids=experiment_ids, max_results
 incorrect_out_runs = []
 # For each run, check if the output shape is correct
 for run in tqdm(all_runs):
-    model, _ = load_mlflow_run_module(run)
+    model = load_mlflow_run_module(run)
     inp_shape = eval(run.data.params['input_cfg.input_shape'])
     inp = torch.randn((1,) + inp_shape)
     model = model.to('cuda')

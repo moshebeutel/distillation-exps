@@ -103,12 +103,6 @@ if __name__ == '__main__':
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
     dispatch = FineTuneTrainer.remote(**dispatch_kwargs)
-    # for p in payloads:
-    #     # Load the model from run and attach the teacher.
-    #     run = mlflow.get_run(p.src_run)
-    #     module, _ = load_mlflow_run_module(run)
-    #     p.module = module
-    #     p.trunk = get_teacher_model(p.trunk_cfg)
     print("Starting Finetune-Dispatch")
     wlref = dispatch.finetune.remote(payloads)
     st_time = time.time()

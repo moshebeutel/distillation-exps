@@ -19,15 +19,16 @@ class CF10CTransforms(_TorchvisionTransforms):
             ],
             'val': [T.ToDtype(torch.float32), T.Normalize(mean, std)],
             'reftrain': [T.ToDtype(torch.float32), T.Normalize(mean, std)],
-            'noise_train':  [
+            'noise_val': [
                 T.ColorJitter(contrast=0.5, brightness=1.0),
                 T.ToDtype(torch.float32), T.Normalize(mean, std),
             ],
+            
             'clip': [
                 T.RandomCrop(32, padding=4), T.RandomHorizontalFlip(),
                 T.ToDtype(torch.float32),
             ],
-            'noise_val': [
+            'noise_train':  [
                 T.ColorJitter(contrast=0.5, brightness=1.0),
                 T.ToDtype(torch.float32), T.Normalize(mean, std),
             ],

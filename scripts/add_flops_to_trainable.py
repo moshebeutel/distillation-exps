@@ -13,7 +13,7 @@ from ddistexps.utils import (
 )
 
 SOURCE_EXP_NAMES = [
-    'composition/debug', 'composition/cifar10', 'composition/cifar10-lbl',
+    'composition/debug',
 ]
 
 experiment_ids = []
@@ -40,7 +40,7 @@ for run in runs_without_trainable_flops:
     if len(artifacts) == 0:
         print("Run", run.info.run_id, "has no model artifacts.")
         continue
-    model, _ = load_mlflow_run_module(run)
+    model = load_mlflow_run_module(run)
     inp_shape = eval(run.data.params['input_cfg.input_shape'])
     # Make sure the model is a composed model
     if type(model) != Composer:

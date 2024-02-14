@@ -33,7 +33,7 @@ def get_teacher_model(teacher_cfg):
         return NoOpTeacher()
     elif 'ClipCIFAR10' in str(vars(teacher_cfg)):
         return ClipCIFAR10_args()
-    trunk, run_id = load_mlflow_module(teacher_cfg)
+    trunk = load_mlflow_module(teacher_cfg.run_id)
     return trunk
 
 

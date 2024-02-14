@@ -5,6 +5,8 @@ import hashlib
 import torch
 from argparse import Namespace
 from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
+import mlflow
+from mlflow.tracking.client import MlflowClient
 
 from ddist.data import DataFlowControl
 from ddist.models import Composer
@@ -37,8 +39,6 @@ def retrive_mlflow_run(payload, expname):
         2. We then stringify the flattened dictionary,
         3. computing the md5 hash of the string, compare.
     """
-    import mlflow
-    from mlflow.tracking.client import MlflowClient
     dedup_policy = payload.meta.dedup_policy
     meta = payload.meta
     del payload.meta # Don't create hash with meta
@@ -108,53 +108,15 @@ def get_dataflow(args, world_size, engine='default'):
     dfctrl = get_persistent_actor(df_actor_name, enginecls, dataflow_args)
     return dfctrl
 
+def load_mlflow_module(runid):
+    run = MlflowClient().get_run(runid)
+    return load_mlflow_run_module(run)
+
 def load_mlflow_run_module(run):
-    """Loads the latest module from mlflow registry.      
+    """Loads the latest module from mlflow artifacts.      
       run: A mlflow.entities.Run object
     """
-    from mlflow.tracking.client import MlflowClient
-    expname = MlflowClient().get_experiment(run.info.experiment_id).name
-    run_cfg = {'expname': expname,
-                'runname': run.info.run_name}
-    return load_mlflow_module(Namespace(**run_cfg))
-
-def load_mlflow_module(run_cfg):
-    """Loads a module from mlflow registry. This function handles
-      picking the right module class and type-checking arguments.
-      
-      run_cfg: A namespace with the following attributes:
-            expname: The name of the experiment
-            runname: The name of the run
-    """
-    import mlflow
-    from mlflow.tracking.client import MlflowClient
-    exp_name = run_cfg.expname
-    run_name = run_cfg.runname
-    exp = mlflow.get_experiment_by_name(exp_name)
     client = MlflowClient()
-    existing_runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        filter_string=f'tags.mlflow.runName = "{run_name}"'
-    )
-    if len(existing_runs) > 1:
-        # Pick the run with max version. We assume all duplicate runs are versioned.
-        version_tags = []
-        for run in existing_runs:
-            version = int(run.data.tags['auto-version'])
-            artifacts = [f.path for f in client.list_artifacts(run.info.run_id)]
-            ckpts = [f for f in artifacts if f.startswith('ep-')]
-            if len(ckpts) == 0:
-                version_tags.append(-1)
-            else:
-                version_tags.append(version)
-        if len(version_tags) == 0:
-            existing_runs = []
-        latest_version = np.argmax(version_tags)
-        existing_runs = [existing_runs[latest_version]]
-    if len(existing_runs) == 0:
-        raise ValueError(f"Invalid run_cfg config: {run_cfg}. No runs found.")
-
-    run = existing_runs[0]
     artifacts = [f.path for f in client.list_artifacts(run.info.run_id)]
     ckpts = [f for f in artifacts if f.startswith('ep-')]
     if len(ckpts) == 0:
@@ -167,7 +129,7 @@ def load_mlflow_module(run_cfg):
     if 'state_dict.pth' not in artifact_files:
         # Not a state dict, we will try to load the model directly
         model = mlflow.pytorch.load_model(artifact_uri)
-        return model, run.info.run_id
+        return model
     # If its a state-dict its hard to figure out container structure. We can only
     # do this for simples cases.
     sd = mlflow.pytorch.load_state_dict(artifact_uri)
@@ -193,9 +155,9 @@ def load_mlflow_module(run_cfg):
         model_kwargs = {k: eval(val) for k, val in model_kwargs.items()}
     else:
         raise ValueError("Unknown trunk:", model_cls)
-    trunk = model_cls(**model_kwargs)
-    a, b = trunk.load_state_dict(sd, strict=True)
-    return trunk, run.info.run_id
+    model = model_cls(**model_kwargs)
+    a, b = model.load_state_dict(sd, strict=True)
+    return model
 
 
 def profile_module(device, mdl_or_mdl_list, inp_shape, stats='flops', batched_inp_shape=False):
@@ -253,8 +215,9 @@ def get_composed_model(input_cfg, module_cfg, composer_cfg):
     input_size = input_cfg.input_shape
     module = dry_run(module, input_size)
 
-    run_cfg = composer_cfg.src_run_cfg
-    src_model, _ = load_mlflow_module(run_cfg)
+    runid = composer_cfg.src_run_id
+    run = MlflowClient().get_run(runid)
+    src_model = load_mlflow_run_module(run)
     for n, p in src_model.named_parameters():
         p.requires_grad = False
     conname = composer_cfg.conn_name

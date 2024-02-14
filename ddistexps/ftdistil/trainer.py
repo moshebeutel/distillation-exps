@@ -17,11 +17,11 @@ from ddistexps.utils import (
     retrive_mlflow_run, load_mlflow_run_module,
 )
 from ddistexps.teachers import get_teacher_model
-from ddistexps.distillation.trainer import DistilTrainerLocal, DistilWorkerLocal
+from ddistexps.distillation.trainer import DistilMapper_, DistilWorker_
 
 
 @ray.remote
-class FineTuneTrainer(DistilTrainerLocal):
+class FineTuneTrainer(DistilMapper_):
 
     def finetune(self, payloads):
         lg.info(f"Multi-finetune started with {len(payloads)} candidate payloads")
@@ -45,7 +45,7 @@ class FineTuneTrainer(DistilTrainerLocal):
 
 
 @ray.remote
-class FineTuneWorker(DistilWorkerLocal):
+class FineTuneWorker(DistilWorker_):
 
     @staticmethod
     def get_all_shifts_acc(rank, world_size, payload, dfctrl, split):
@@ -59,9 +59,9 @@ class FineTuneWorker(DistilWorkerLocal):
         info = {}
         for shift in tqdm(ALL_C_SHIFTS):
             split_name = f'{split}-shift-{shift}'
-            info[shift] = TR.testmodel(rank, world_size, payload, dfctrl, split_name)
-        avg_acc = np.mean(list(info.values()))
-        return info, avg_acc
+            cor, tot = TR.testmodel(rank, world_size, payload, dfctrl, split_name)
+            info[f"acc_split_name"] = (cor / tot) * 100.0
+        return info
 
     @staticmethod
     def finetune(rank, world_size, payload, dfctrl):
@@ -72,7 +72,7 @@ class FineTuneWorker(DistilWorkerLocal):
         device = ray_get_device()
         # Load all modules
         run = mlflow.get_run(payload.src_run)
-        model, _ = load_mlflow_run_module(run)
+        model = load_mlflow_run_module(run)
         trunk = get_teacher_model(payload.trunk_cfg)
         payload.module, payload.trunk = model, trunk
         model, trunk = payload.module.to(device), payload.trunk.to(device)
@@ -122,6 +122,8 @@ class FineTuneWorker(DistilWorkerLocal):
         if (world_size > 1): model = model.module
         model = model.to('cpu')
         if rank == 0:
+            sinfo = TR.get_all_shifts_acc(rank, world_size, payload, dfctrl, 'val')
+            info = info | sinfo
             with mlflow.start_run(run_id=runid):
                 mlflow.log_metrics(info, step=train_cfg.num_epochs)
                 name = 'ep-' + str(train_cfg.num_epochs)

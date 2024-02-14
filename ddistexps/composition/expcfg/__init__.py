@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from ddist.models import ResidualCNN, Composer
 from ddist.models.resnet_cifar import ResNetv3Patched
-from ddistexps.utils import load_mlflow_module
 from ddist.utils import namespace_to_dict
 from .debug import EXPERIMENTS as expdebug
 from .cifar10 import EXPERIMENTS as expcifar10

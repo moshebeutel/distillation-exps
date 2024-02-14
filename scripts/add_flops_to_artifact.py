@@ -34,7 +34,7 @@ for run in runs_without_flops:
     if len(artifacts) == 0:
         print("Run", run.info.run_id, "has no model artifacts.")
         continue
-    model, _ = load_mlflow_run_module(run)
+    model = load_mlflow_run_module(run)
     inp_shape = eval(run.data.params['input_cfg.input_shape'])
     flops = profile_module('cuda', model, inp_shape)
     with mlflow.start_run(run_id=run.info.run_id):

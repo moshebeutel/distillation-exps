@@ -16,7 +16,7 @@ def profile_runs(runlist, input_shape):
     metricsdf['runid'] = [r.info.run_id for r in runlist]
     for run in runlist:
         # Fetch the artifact directory and the model from it
-        model, _ = load_mlflow_run_module(run)
+        model = load_mlflow_run_module(run)
         flops = profile_module('cuda', model, input_shape)
         metricsdf.loc[metricsdf['runid'] == run.info.run_id, 'flops'] = flops[0]
     return metricsdf
@@ -25,7 +25,8 @@ def profile_runs(runlist, input_shape):
 def fetch_valid_runs(expnames, acc_threshold=20.0):
     """Fetches all runs from the given experiment names and
     returns a dataframe with the metrics of the runs that 
-    have a validation accuracy higher than the given threshold.
+    have a validation accuracy higher than the given threshold
+    and have valid artifacts to load.
     """
     experiment_ids = []
     for expname in expnames:
@@ -33,13 +34,23 @@ def fetch_valid_runs(expnames, acc_threshold=20.0):
         experiment_ids.append(experiment_id)
         print(f"Found experiment {expname} with id {experiment_id}")
 
-    existing_runs = MlflowClient().search_runs(experiment_ids=experiment_ids)
+    existing_runs = MlflowClient().search_runs(experiment_ids=experiment_ids, max_results=10000)
     print(f"Found {len(existing_runs)} runs")
-    metrics = [r.data.metrics for r in existing_runs]
+    # Filter out runs without artifacts
+    valid_runs = []
+    for run in existing_runs:
+        # Check if the run has the model artifact and remove 'param_str.txt' 
+        artifacts = [f.path for f in MlflowClient().list_artifacts(run.info.run_id)]
+        artifacts = [a for a in artifacts if 'param_str.txt' not in a]
+        if len(artifacts) == 0:
+            continue
+        valid_runs.append(run)
+    print(f"Found {len(valid_runs)} runs with valid artifacts")
+    metrics = [r.data.metrics for r in valid_runs]
     metricsdf = pd.DataFrame(metrics)
-    metricsdf['runid'] = [r.info.run_id for r in existing_runs]
+    metricsdf['runid'] = [r.info.run_id for r in valid_runs]
     valid_runs = metricsdf[metricsdf['val_acc'] > acc_threshold]
-    print(f"Found {len(valid_runs)} valid runs")
+    print(f"Found {len(valid_runs)} valid runs acc-threshold: {acc_threshold}")
     validrunids = valid_runs['runid']
     validruns = [MlflowClient().get_run(runid) for runid in validrunids]
     return validruns
@@ -76,7 +87,7 @@ def get_en_stats(dfctrl, en_runid_dict):
     en_module_dict = {}
     for k, runid in en_runid_dict.items():
         run = MlflowClient().get_run(runid)
-        module, _ = load_mlflow_run_module(run)
+        module = load_mlflow_run_module(run)
         en_run_dict[k] = run
         en_module_dict[k] = module
     

@@ -53,7 +53,7 @@ def resnetgen(in_H=32, in_W=32, out_dim=10):
 def resnetv3patchedgen(in_H=32, in_W=32, out_dim=10):
     cands = {
         'fn': ResNetv3Patched,
-        'kwargs': {'depth': [20, 32, 44, 56, 110], 'num_classes': out_dim}
+        'kwargs': {'depth': [8, 14, 20], 'num_classes': out_dim}
     }
     return cands
 
