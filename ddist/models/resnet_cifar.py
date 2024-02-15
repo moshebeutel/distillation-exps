@@ -199,7 +199,9 @@ class ResNet(nn.Module):
         self.layer_block = nn.Sequential(*layers)
         # Post Block 
         self.avgpool = nn.AvgPool2d(8)
-        self.fc = nn.Linear(64 * block.expansion, num_classes)
+        # We don't know shape upfront so we use a lazy linear layer.
+        self.fc = nn.LazyLinear(num_classes)
+        # self.fc = nn.Linear(emb_list[-1] * block.expansion, num_classes)
         post_block = [self.avgpool, Lambda(self.flatten), self.fc]
         self.post_block = nn.Sequential(*post_block)
         # Set good defaults for conv and batchnorm layers

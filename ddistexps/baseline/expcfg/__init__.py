@@ -38,8 +38,50 @@ def resnetdebug(out_dim=10):
     cands = cands + spec_to_prodspace(verbose_depth=vd, **cands3)
     return cands
 
+def resnetsmall(out_dim=10):
+    from ddist.utils import spec_to_prodspace
+    cands1 = {
+        'fn': ResNetOriginal,
+        'kwargs': {'depth': [8, 14], 'num_classes': out_dim}
+    }
+    cands2 = {
+        'fn': ResNetDefault,
+        'kwargs': {'depth': [8, 14], 'num_classes': out_dim}
+    }
+    cands3 = {
+        'fn': ResNet,
+        'kwargs': [
+            # # 8
+            # {'num_classes': out_dim,
+            #   'blocks_list': [1, 1, 1], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
+            # # 14
+            # {'num_classes': out_dim,
+            #   'blocks_list': [2, 2, 2], 'emb_list': [16, 32, 64], 'stride_list': [1, 2, 2]},
 
-def resnetall(out_dim=10):
+            # General Small models
+            {'num_classes': out_dim,
+              'blocks_list': [1], 'emb_list': [8], 'stride_list': [1]},
+            {'num_classes': out_dim,
+              'blocks_list': [1], 'emb_list': [8], 'stride_list': [2]},
+            {'num_classes': out_dim,
+              'blocks_list': [1], 'emb_list': [16], 'stride_list': [2]},
+            {'num_classes': out_dim,
+              'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [1, 2]},
+            {'num_classes': out_dim,
+              'blocks_list': [1, 1], 'emb_list': [8, 16], 'stride_list': [2, 2]},
+            {'num_classes': out_dim,
+              'blocks_list': [1, 1], 'emb_list': [8, 8], 'stride_list': [2, 2]},
+        ],
+    }
+    cands = []
+    vd = 0
+    # cands = spec_to_prodspace(verbose_depth=vd, **cands1)
+    # cands = cands + spec_to_prodspace(verbose_depth=vd, **cands2)
+    cands = cands + spec_to_prodspace(verbose_depth=vd, **cands3)
+    return cands
+
+
+def resnetlarge(out_dim=10):
     from ddist.utils import spec_to_prodspace
     cands1 = {
         'fn': ResNetOriginal,
@@ -47,7 +89,7 @@ def resnetall(out_dim=10):
     }
     cands2 = {
         'fn': ResNetDefault,
-        'kwargs': {'depth': [8, 14, 20, 32, 44, 110], 'num_classes': out_dim}
+        'kwargs': {'depth': [20, 32, 44, 110], 'num_classes': out_dim}
     }
     cands3 = {
         'fn': ResNet,
@@ -70,12 +112,13 @@ def resnetall(out_dim=10):
     return cands
 
 
-
 def get_candgen(gridgen, ds_meta):
     # in_H, in_W = ds_meta['image_dims'][1:]
     outdim = ds_meta['num_labels']
-    if gridgen in ['resnetall']:
-        grid_records = resnetall(outdim)
+    if gridgen in ['resnetsmall']:
+        grid_records = resnetsmall(outdim)
+    elif gridgen in ['resnetlarge']:
+        grid_records = resnetlarge(outdim)
     elif gridgen in ['resnetdebug']:
         grid_records = resnetdebug(outdim)
     else:

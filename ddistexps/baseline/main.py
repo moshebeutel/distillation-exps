@@ -35,7 +35,7 @@ if __name__ == '__main__':
     # Populate the experiment spec with the module grid 
     dataset = spec['dataflow']['ds_name']
     ds_meta = get_dataset_metadata(dataset)
-    module_grid = get_candgen(spec['gridgen'], ds_meta)
+    module_grid = get_candgen(spec['meta']['gridgen'], ds_meta)
     spec['module_cfg'] = module_grid
 
     # Setup the experiment

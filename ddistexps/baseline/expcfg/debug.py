@@ -11,8 +11,8 @@ EXPERIMENTS = {
             },
             # skip, recreate, continue
             'dedup_policy': 'skip',  
+            'gridgen': 'resnetdebug',
         },
-        'gridgen': 'resnetdebug',
         'dataflow': {'ds_name': 'TinyCIFAR10', },
         'input_cfg': {'input_shape': (3, 32, 32)},
         # We handle gridding of the following
