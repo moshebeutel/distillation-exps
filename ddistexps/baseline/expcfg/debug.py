@@ -5,21 +5,22 @@ EXPERIMENTS = {
         # when testing if a run already exists.
         'meta': {
             'worker_cfg': {
-                'resource_req': {'num_gpus': 1.0},
-                'world_size': 2,
-                'num_workers': 4,
+                'resource_req': {'num_gpus': .25},
+                'world_size': 1,
+                'num_workers': 16,
             },
             # skip, recreate, continue
-            'dedup_policy': 'recreate',  
+            'dedup_policy': 'skip',  
         },
-        'gridgen': 'resnetv3patchedgen',
+        'gridgen': 'resnetdebug',
         'dataflow': {'ds_name': 'TinyCIFAR10', },
         'input_cfg': {'input_shape': (3, 32, 32)},
         # We handle gridding of the following
+        'trial': [0, 1, 2],
         'test_cfg': {'batch_size_gpu': 512},
         'train_cfg': {
             'num_epochs': [1],
-            'batch_size_gpu': 32,
+            'batch_size_gpu': 128,
             'optim':[
                 {'name': 'sgd', 'lr': 0.01, 'lr_scheduler': 'multistep',
                  'momentum': 0.9, 'weight_decay': 5e-4, 'lr_gamma': 0.2,

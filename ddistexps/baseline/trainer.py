@@ -2,6 +2,7 @@ import ray
 import pandas as pd
 import mlflow
 from argparse import Namespace
+from rich import print as rr
 
 import torch
 import time
@@ -14,7 +15,9 @@ from ray.air.util.torch_dist import TorchDistributedWorker
 from ray.air.util.torch_dist import get_device as ray_get_device
 # from ray.data import ActorPoolStrategy
 
-from ddist.utils import CLog as lg, namespace_to_dict
+from ddist.utils import (
+    namespace_to_dict, flatten_dict
+)
 import numpy as np
 from ddist.dispatch import BaseMapper
 
@@ -56,25 +59,14 @@ class BaselineReducer(BaseMapper):
         mlflow.set_experiment(experiment_name=run_cfg.meta.expname)
         with mlflow.start_run() as run:
             payload.runid = run.info.run_id
-            mlflow.log_params(namespace_to_dict(run_cfg))
+            mlflow.log_params(flatten_dict(namespace_to_dict(run_cfg)))
             X = torch.rand(1, *input_shape)
             mlflow.pytorch.log_model(payload.model, "model/initial", input_example=X.numpy())
         return payload
         
     @staticmethod
     def _train_reduce(results):
-        payload = results[0]
-        runid = payload.runid
-        with mlflow.start_run(run_id=runid):
-            X = torch.rand(1, *payload.run_cfg.input_cfg.input_shape)
-            model = payload.model
-            mlflow.pytorch.log_model(model, 'model/final', input_example=X.numpy())
-            # Since each worker used different data to pick the best, we should save all.
-            for rank in range(len(results)):
-                artifact_path = f'runs:/{runid}/state_dict/best{rank}'
-                best_sd = mlflow.pytorch.load_state_dict(artifact_path, map_location='cpu')
-                model.load_state_dict(best_sd)
-                mlflow.pytorch.log_model(model, f'model/best{rank}', input_example=X.numpy())
+        runid = results[0].runid
         # Reduce the summary statistics.
         sums = [p.summary for p in results]
         summs_df = pd.DataFrame(sums)
@@ -89,7 +81,7 @@ class BaselineReducer(BaseMapper):
         return results
 
     def train(self, run_cfgs):
-        lg.info(f"Multi-train started with {len(run_cfgs)} candidate payloads")
+        rr(f"Multi-train started with {len(run_cfgs)} candidate payloads")
         dfctrl = self.dfctrl
         fn_args = {'dfctrl': dfctrl}
         fn = BaselineWorker.train
@@ -99,7 +91,7 @@ class BaselineReducer(BaseMapper):
         map_results = self.map_workers(run_cfgs, fn, fn_args, setup_fn=setup_fn, 
                                        setup_kwargs=setup_kwargs, teardown_fn=teardown_fn)
         map_results_ = [res[0] for res in map_results]
-        lg.info("Multi-train: Finished")
+        rr("Multi-train: Finished")
         return map_results_
 
 
@@ -230,7 +222,6 @@ class BaselineWorker(TorchDistributedWorker):
             val_acc = (count / tot) * 100.0
             if val_acc > best_val_acc:
                 ckpt_model = True
-                best_val_predictions = (count, tot)
             best_val_acc = max(best_val_acc, val_acc)
             val_info = {f'val_acc{rank}': val_acc, f'val_acc{rank}_best': best_val_acc}
             with mlflow.start_run(run_id=runid):
@@ -243,15 +234,25 @@ class BaselineWorker(TorchDistributedWorker):
                 with mlflow.start_run(run_id=runid):
                     mlflow.pytorch.log_state_dict(sd, f'state_dict/best{rank}')
         train_end_time = time.time() - train_st_time
+        if world_size > 1:
+            model = model.module
+        # Log final model
         with mlflow.start_run(run_id=runid):
+            final_sd = model.state_dict().copy()
             mlflow.log_metrics({f'train_duration{rank}': train_end_time})
-        tracc_res = tstfn(rank, world_size, payload, dfctrl, 'reftrain')
-        valacc_res = tstfn(rank, world_size, payload, dfctrl, 'val')
-        info = {'train_acc_final': tracc_res, 'val_acc_final': valacc_res,
-                'val_acc_max': best_val_predictions}
-        payload.summary = info
-        if (world_size > 1): model = model.module
+            mlflow.pytorch.log_state_dict(final_sd, f'state_dict/final{rank}')
+        # Final val_acc and best val_acc
+        final_val = tstfn(rank, world_size, payload, dfctrl, 'val')
+        artifact_uri = f'runs:/{runid}/state_dict/best{rank}'
+        bestsd = mlflow.pytorch.load_state_dict(artifact_uri)
+        model.load_state_dict(bestsd)
+        payload.model = model
+        best_val = tstfn(rank, world_size, payload, dfctrl, 'val')
+        info = {'val_acc_final': final_val, 'val_acc_best': best_val}
+        # Return summary to be reduced
+        model.load_state_dict(final_sd)
         payload.model = model.to('cpu')
+        payload.summary = info
         return payload
 
     @staticmethod
