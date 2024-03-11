@@ -1,7 +1,7 @@
 # Easiest way to fix runs is to create a new run and copy/fix parameters;
 import mlflow
 from mlflow.tracking.client import MlflowClient
-from ddistexps.utils import param_hash
+from doubledistill.ddistexps.utils import param_hash
 from rich import print as pp
 
 expname='debug'

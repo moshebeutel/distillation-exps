@@ -1,10 +1,8 @@
 # Load the latest saved artifact for all runs and profile the model to get the flops.
 import mlflow
-import torch
-import pandas as pd
 from mlflow.tracking import MlflowClient
 
-from ddistexps.utils import (
+from doubledistill.ddistexps.utils import (
     load_mlflow_run_module, profile_module
 )
 

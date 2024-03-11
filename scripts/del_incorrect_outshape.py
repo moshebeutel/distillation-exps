@@ -1,11 +1,9 @@
-import mlflow
 import torch
-import pandas as pd
 from mlflow.tracking import MlflowClient
 from tqdm import tqdm
 
-from ddistexps.utils import (
-    load_mlflow_run_module, profile_module
+from doubledistill.ddistexps.utils import (
+    load_mlflow_run_module
 )
 
 SOURCE_EXP_NAMES = ['baseline/debug', 'distillation/debug', 

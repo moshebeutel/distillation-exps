@@ -2,13 +2,12 @@
 # Adds it as trainable-flops key
 import mlflow
 import torch
-import pandas as pd
 from rich import print
 from mlflow.tracking import MlflowClient
 
-from ddist.models import Composer, Lambda
+from doubledistill.ddist.models import Composer, Lambda
 
-from ddistexps.utils import (
+from doubledistill.ddistexps.utils import (
     load_mlflow_run_module, profile_module
 )
 
