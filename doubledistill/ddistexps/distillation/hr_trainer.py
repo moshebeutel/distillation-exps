@@ -21,8 +21,8 @@ import wandb
 
 
 class Config:
-    BATCH_SIZE: int = 64
-    EPOCHS: int = 5
+    BATCH_SIZE: int = 32
+    EPOCHS: int = 2
     OPTIMIZER: str = "SGD"
     LEARNING_RATE: float = 0.1
     WEIGHT_DECAY: float = 5e-4
@@ -38,12 +38,16 @@ class Config:
     MODEL_NAME: str = "resnetsmall"  # ['resnetsmall', 'resnetlarge', 'resnetdebug']
     DATASET_NAME: str = "CIFAR10"  # ['CIFAR10', 'TinyCIFAR10', 'CIFAR100']
     STUDENT_CANDIDATE_NUM: int = 3  # [0,1,2,3,4,5]
+    CHECKPOINTS_PATH: str = './checkpoints'
 
     @staticmethod
     def populate_args(args):
         Config.STUDENT_CANDIDATE_NUM = args.candidate_number
         Config.EPOCHS = args.epochs
         Config.MODEL_NAME = args.resnet_subtype
+
+        if not os.path.exists(Config.CHECKPOINTS_PATH):
+            os.mkdir(Config.CHECKPOINTS_PATH)
 
     @staticmethod
     def populate_sweep_config(sweep_config):
@@ -165,8 +169,12 @@ def get_tempr(epoch):
 
 def distillation_loss(predlogits, tgtlogits, tempr):
     soft_tgt = F.softmax(tgtlogits / tempr, dim=-1)
-    soft_pred = F.softmax(predlogits / tempr, dim=-1)
-    approx_loss = -torch.sum(soft_tgt * soft_pred) / soft_pred.size()[0]
+
+    # soft_pred = F.softmax(predlogits / tempr, dim=-1)
+    # approx_loss = -torch.sum(soft_tgt * soft_pred) / soft_pred.size()[0]
+
+    soft_pred = F.log_softmax(predlogits / tempr, dim=-1)
+    approx_loss = torch.sum(soft_tgt * (soft_tgt.log() - soft_pred))  / soft_pred.size()[0]
     approx_loss = approx_loss * (tempr ** 2)
     return approx_loss
 
@@ -295,9 +303,11 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
         model.train()
         pbar_batches = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
         for batch_idx, (x_batch, y_batch) in pbar_batches:
+            optimizer.zero_grad()
             inX, iny = x_batch.to(device), y_batch.to(device)
             predlogits = model(inX)
-            tgtlogits = trunk(inX)
+            with torch.no_grad():
+                tgtlogits = trunk(inX)
             x_loss = F.cross_entropy(predlogits, iny)
             d_loss = distillation_loss(predlogits, tgtlogits, temperature)
             loss = get_loss(distill_loss=d_loss, cross_entropy_loss=x_loss)
@@ -320,7 +330,7 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
         if val_acc > best_acc:
             best_acc = val_acc
             save_checkpoint(round=epoch, val_acc=val_acc,
-                            out_dir=f'./checkpoints/{Config.MODEL_NAME}_student_{Config.STUDENT_CANDIDATE_NUM}',
+                            out_dir=f'{Config.CHECKPOINTS_PATH}/{Config.MODEL_NAME}_student_{Config.STUDENT_CANDIDATE_NUM}',
                             state={'epoch': epoch, 'model_state_dict': model.state_dict(),
                                    'optimizer_state_dict': optimizer.state_dict(), 'val_acc': val_acc})
         epoch_summary = EpochSummary(epoch=epoch,
@@ -367,7 +377,8 @@ def run_sweep(args):
             'values': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         },
         'resnet_subtype': {
-            'values': ['resnetsmall', 'resnetlarge', 'resnetdebug']
+            # 'values': ['resnetsmall', 'resnetlarge', 'resnetdebug']
+            'values': ['resnetdebug']
         },
         'loss_temperature_cfg': {
             'values': [
@@ -398,7 +409,7 @@ def run_sweep(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=5)
+    parser.add_argument('--epochs', type=int, default=2)
     parser.add_argument('--resnet-subtype', type=str, default='resnetdebug',
                         choices=['resnetsmall', 'resnetlarge', 'resnetdebug'])
     parser.add_argument('--candidate-number',
