@@ -1,31 +1,38 @@
-# 
-#  Standard temperature based distillation
-#
+from pathlib import Path
 import ray
 import os
 import time
 import mlflow
+import numpy as np
 from argparse import ArgumentParser
 from rich import print as rr
 
-from doubledistill.ddist.data import get_dataset
-from doubledistill.ddist.utils import spec_to_prodspace, dict_to_namespace
+from ddist.data import get_dataset
+from ddist.utils import spec_to_prodspace, dict_to_namespace, namespace_to_dict
 
-from doubledistill.ddistexps.utils import get_dataflow
-from doubledistill.ddistexps.composition.expcfg import get_candgen, EXPERIMENTS
-from doubledistill.ddistexps.composition.trainer import ComposeMapper
+from ddistexps.baseline.trainer import BaselineTrainer as BLTrainer
+from dotenv import load_dotenv
+load_dotenv()
+
+from ddistexps.baseline.expcfg import EXPERIMENTS
+from ddistexps.baseline.expcfg import get_candgen
+from ddistexps.utils import get_dataflow
 
 
 if __name__ == '__main__':
+    assert os.environ['TORCH_DATA_DIR'] == f'{Path.home()}/datasets/',\
+        'Environment variable TORCH_DATA_DIR must be set to {Path.home()}/datasets/'
+    assert os.environ['DDIST_EXPS_DIR'] == f'{Path.home()}/GIT/distillation-exps',\
+        'Environment variable DDIST_EXPS_DIR must be set to {Path.home()}/GIT/distillation-exps'
+
     parser = ArgumentParser()
     msg = "The exeriment name as expcfg.EXPERIMENTS."
     parser.add_argument("--expname", type=str, help=msg, required=True,
-                        default=None)
+                        default='debug')
 
     expname = parser.parse_args().expname
     spec = EXPERIMENTS[expname]
-    # Attach sub-directory to expname
-    expname = 'composition/' + expname
+    expname = 'baseline/' + expname
     spec['mlflow_expname'] = [expname]
     meta = spec['meta']
 
@@ -41,20 +48,26 @@ if __name__ == '__main__':
     # Set environment variable RAY_ADDRESS to use a pre-existing cluster
     dfnamespace = 'DataFlow'
     ray.init(namespace=dfnamespace)
-    tracking_uri = os.environ['MLFLOW_TRACKING_URI']
-    mlflow.set_tracking_uri(tracking_uri)
-    rr("[green bold] Connecting to mlflow using:", tracking_uri)
+    # tracking_uri = os.environ['MLFLOW_TRACKING_URI']
+    # mlflow.set_tracking_uri(tracking_uri)
+    # rr("[green bold] Connecting to mlflow using:", tracking_uri)
+    mlflow.autolog()
 
     dflow = prod_space[0]['dataflow']
     dfctrl = ray.get(get_dataflow.remote(dflow, meta.worker_cfg.world_size))
     rr("DF Actor ready:", ray.get(dfctrl.ready.remote()))
     dispatch_kwargs = { 'dfctrl': dfctrl, 'worker_cfg': meta.worker_cfg}
 
-    cdispatch = ComposeMapper.remote(**dispatch_kwargs)
-    resultsref = cdispatch.composetrain.remote(payloads)
+    # Create trainer + dispatcher
+    bldispatch = BLTrainer.remote(**dispatch_kwargs)
+    # Attach a model to each payload
+    for p in payloads:
+        _kwargs = namespace_to_dict(p.module_cfg.kwargs)
+        p.module = p.module_cfg.fn(**_kwargs)
+    ref = bldispatch.train.remote(payloads)
     st_time = time.time()
-    ray.get(resultsref)
+    # Wait for training and logging to complete
+    ray.get(ref)
     info_ = {'experiment': expname, 'num_payloads': len(payloads),
             'total-duration': time.time() - st_time}
     rr("Experiment completed:", info_)
-

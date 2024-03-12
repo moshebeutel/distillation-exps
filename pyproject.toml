@@ -16,10 +16,14 @@ torch = "^2.1.2"
 torchvision = "^0.16.2"
 rich = "^13.7.0"
 grpcio = "^1.60.0"
+<<<<<<< HEAD
 pandas = "^1.5.0"
 open-clip-torch = "^2.24.0"
 deepspeed = "^0.13.2"
 wandb = "^0.16.4"
+=======
+
+>>>>>>> origin/master
 
 [tool.poetry.group.dev.dependencies]
 ray = "^2.8.1"
