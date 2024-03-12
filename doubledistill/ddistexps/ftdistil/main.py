@@ -10,7 +10,7 @@
 import ray
 import os
 import time
-import mlflow
+# import mlflow
 import numpy as np
 from argparse import ArgumentParser
 from rich import print
@@ -40,11 +40,11 @@ def get_pretrained_runs(src_exp_names, nclusters=8, nmodels_per_cluster=2):
     all_exp_ids = []
     for expname in SOURCE_EXPS:
         print("Getting experiment:", expname)
-        eid = mlflow.get_experiment_by_name(expname).experiment_id
-        all_exp_ids.append(eid)
+        # eid = mlflow.get_experiment_by_name(expname).experiment_id
+        # all_exp_ids.append(eid)
 
-    all_runs_df = mlflow.search_runs(experiment_ids=all_exp_ids, max_results=10000,
-                                     filter_string="attributes.status = 'FINISHED'")
+    # all_runs_df = mlflow.search_runs(experiment_ids=all_exp_ids, max_results=10000,
+    #                                  filter_string="attributes.status = 'FINISHED'")
     data1 = all_runs_df[['run_id', 'metrics.flops', 'metrics.val_acc', 'metrics.train_duration']]
     # Remove rows with NaN
     data1 = data1.dropna()
@@ -90,8 +90,8 @@ if __name__ == '__main__':
     dfnamespace = 'FDistilDataFlow'
     ray.init(namespace=dfnamespace)
     tracking_uri = os.environ['MLFLOW_TRACKING_URI']
-    mlflow.set_tracking_uri(tracking_uri)
-    print("[green bold] Connecting to mlflow using:", tracking_uri)
+    # mlflow.set_tracking_uri(tracking_uri)
+    # print("[green bold] Connecting to mlflow using:", tracking_uri)
 
     dflow = prod_space[0]['dataflow']
     ref = get_dataflow.remote(dflow, meta.worker_cfg.world_size,

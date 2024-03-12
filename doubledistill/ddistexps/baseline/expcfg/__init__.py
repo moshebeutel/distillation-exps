@@ -38,8 +38,8 @@ def resnetdebug(out_dim=10):
     cands = cands + spec_to_prodspace(verbose_depth=vd, **cands3)
     return cands
 
-def resnetsmall(out_dim=10):
-    from doubledistill.ddist import spec_to_prodspace
+def resnetsmall(spec_to_prodspace, out_dim=10):
+    from doubledistill.ddist.utils import spec_to_prodspace
     cands1 = {
         'fn': ResNetOriginal,
         'kwargs': {'depth': [8, 14], 'num_classes': out_dim}
@@ -82,7 +82,7 @@ def resnetsmall(out_dim=10):
 
 
 def resnetlarge(out_dim=10):
-    from doubledistill.ddist import spec_to_prodspace
+    from doubledistill.ddist.utils import spec_to_prodspace
     cands1 = {
         'fn': ResNetOriginal,
         'kwargs': {'depth': [20, 32, 44, 110], 'num_classes': out_dim}

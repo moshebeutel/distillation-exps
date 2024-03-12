@@ -8,6 +8,7 @@ import pandas as pd
 import ray
 import torch
 
+
 class CF10CTransforms(_TorchvisionTransforms):
     def __init__(self, in_gpu_transform=True):
         mean, std = (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
@@ -23,12 +24,12 @@ class CF10CTransforms(_TorchvisionTransforms):
                 T.ColorJitter(contrast=0.5, brightness=1.0),
                 T.ToDtype(torch.float32), T.Normalize(mean, std),
             ],
-            
+
             'clip': [
                 T.RandomCrop(32, padding=4), T.RandomHorizontalFlip(),
                 T.ToDtype(torch.float32),
             ],
-            'noise_train':  [
+            'noise_train': [
                 T.ColorJitter(contrast=0.5, brightness=1.0),
                 T.ToDtype(torch.float32), T.Normalize(mean, std),
             ],
@@ -36,12 +37,13 @@ class CF10CTransforms(_TorchvisionTransforms):
                 T.GaussianBlur(kernel_size=3),
                 T.ToDtype(torch.float32), T.Normalize(mean, std),
             ],
-            'norm_transform' : [
+            'norm_transform': [
                 T.ToDtype(torch.float32), T.Normalize(mean, std),
             ],
         }
         super().__init__(mean, std, img_dims, in_gpu_transform,
                          transforms_dict=transforms_dict)
+
 
 @ray.remote(num_gpus=0)
 class AugDataFlow(DFC):
@@ -84,7 +86,7 @@ class AugDataFlow(DFC):
         xarr, yarr = xarr[ridx], yarr[ridx]
         payload = pd.DataFrame({
             'image': [x for x in xarr], 'label': yarr, 'index':
-            np.arange(len(xarr)).astype(np.int32)
+                np.arange(len(xarr)).astype(np.int32)
         })
         split_payload = np.array_split(payload, read_parallelism)
         ds = ray.data.from_pandas(split_payload)
@@ -120,5 +122,5 @@ class AugDataFlow(DFC):
         transform = self.get_transform(split=split)
         if self._in_gpu_memory_ds is True:
             shard = self._getshard_gpu(split, shard, rank, ddp_world_size,
-                                        device, transform, transform_cfg)
+                                       device, transform, transform_cfg)
         return shard
