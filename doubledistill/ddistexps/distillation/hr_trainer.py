@@ -22,7 +22,7 @@ import wandb
 
 class Config:
     BATCH_SIZE: int = 64
-    EPOCHS: int = 30
+    EPOCHS: int = 5
     OPTIMIZER: str = "SGD"
     LEARNING_RATE: float = 0.1
     WEIGHT_DECAY: float = 5e-4
@@ -67,7 +67,10 @@ class LOG:
             logging.info(*args)
         if kwargs:
             logging.info(kwargs)
-            wandb.log(kwargs)
+            if 'epoch_summary' in kwargs.keys():
+                wandb.log(kwargs['epoch_summary']._asdict())
+            else:
+                wandb.log(kwargs)
 
 
 logger = LOG()
@@ -172,18 +175,17 @@ def get_loss(distill_loss, cross_entropy_loss):
     return distill_loss * Config.LOSS_DISTILL_REG + cross_entropy_loss * Config.LOSS_XENTROPY_REG
 
 
-def save_checkpoint(round, state, out_dir):
+def save_checkpoint(round, val_acc, state, out_dir):
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    cur = "ensemble-" + timestr + f"-{round}.pt"
+    cur = "ensemble-" + timestr + f"-{round}-val_acc_{val_acc}.pt"
     fname = os.path.join(out_dir, cur)
     # Save the current sate dict. TODO: Add random suffix
     assert not os.path.exists(fname), "Found existing checkpoint!"
     torch.save(state, fname)
     assert os.path.exists(fname)
-
     logger(f"Checkpoint saved to: {fname}")
     return fname
 
@@ -286,9 +288,8 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
     correct, total = evaluate(model=trunk, data_loader=val_loader)
     trunk_acc = float(correct) / float(total) * 100.0
     logger(trunk_acc=trunk_acc)
-    pbar_epochs = trange(Config.EPOCHS)
     best_acc = 0.0
-    for epoch in pbar_epochs:
+    for epoch in range(Config.EPOCHS):
         temperature = get_tempr(epoch=epoch)
         tot_loss, tot_d_loss, tot_x_loss, batches = 0.0, 0.0, 0.0, 0
         model.train()
@@ -318,16 +319,16 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
         val_acc = float(correct) / float(total) * 100.0
         if val_acc > best_acc:
             best_acc = val_acc
-            save_checkpoint(round=epoch,
+            save_checkpoint(round=epoch, val_acc=val_acc,
                             out_dir=f'./checkpoints/{Config.MODEL_NAME}_student_{Config.STUDENT_CANDIDATE_NUM}',
-                            state=model.state_dict())
+                            state={'epoch': epoch, 'model_state_dict': model.state_dict(),
+                                   'optimizer_state_dict': optimizer.state_dict(), 'val_acc': val_acc})
         epoch_summary = EpochSummary(epoch=epoch,
                                      loss=tot_loss / batches,
                                      distill_loss=tot_d_loss / batches,
                                      xentropy_loss=tot_x_loss / batches,
                                      ep_temperature=temperature,
                                      val_acc=val_acc)
-        pbar_epochs.set_description(f'{epoch_summary}')
         logger(epoch_summary=epoch_summary)
 
 
@@ -397,7 +398,7 @@ def run_sweep(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=2)
+    parser.add_argument('--epochs', type=int, default=5)
     parser.add_argument('--resnet-subtype', type=str, default='resnetdebug',
                         choices=['resnetsmall', 'resnetlarge', 'resnetdebug'])
     parser.add_argument('--candidate-number',
