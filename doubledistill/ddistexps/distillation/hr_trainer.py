@@ -55,6 +55,9 @@ class Config:
         Config.WEIGHT_DECAY = sweep_config.lr_weight_decay
 
 
+NUM_CANDIDATES = {'resnetsmall': 6, 'resnetlarge': 12, 'resnetdebug': 3}
+
+
 class LOG:
     def __init__(self):
         logging.basicConfig(level=logging.INFO)
@@ -200,17 +203,27 @@ def get_teacher():
     return trunk
 
 
-def get_student_model(candidate_number: int):
+def get_student_model(candidate_number: int) -> torch.nn.Module:
+    """
+    Get student model candidate from config product space
+    :param candidate_number: Index of candidate in config grid
+    :return: student model
+    """
     ds_meta = get_dataset(Config.DATASET_NAME).metadata
     grid = get_candgen(gridgen=Config.MODEL_NAME, ds_meta=ds_meta)
-    Config.STUDENT_CANDIDATE_NUM = candidate_number % len(grid)
+    assert candidate_number < len(grid),\
+        f"Expected candidate number < {len(grid)} for {Config.MODEL_NAME}, Got {candidate_number}"
     cand = grid[Config.STUDENT_CANDIDATE_NUM]
     student = cand['fn'](**cand['kwargs'])
     logger(f'Student Model {student}')
     return student
 
 
-def get_data_loaders():
+def get_data_loaders() -> tuple[DataLoader, DataLoader]:
+    """
+    Get data loaders for train and validation splits
+    :return: tuple of the data loaders
+    """
     ds_factory = DatasetFactory(dataset_name=Config.DATASET_NAME)
     ds_train, ds_val = ds_factory.train_set, ds_factory.val_set
     train_loader = torch.utils.data.DataLoader(ds_train, batch_size=Config.BATCH_SIZE, shuffle=True)
@@ -218,14 +231,23 @@ def get_data_loaders():
     return train_loader, val_loader
 
 
-def get_models():
+def get_models() -> tuple[torch.nn.Module, torch.nn.Module]:
+    """
+    Get models for teacher and student
+    """
     student_model = get_student_model(Config.STUDENT_CANDIDATE_NUM)
     teacher_model = get_teacher()
     return student_model, teacher_model
 
 
 @torch.no_grad()
-def evaluate(model, data_loader) -> tuple[int, int]:
+def evaluate(model: torch.nn.Module, data_loader: DataLoader) -> tuple[int, int]:
+    """
+    Evaluate the given model using the data loader
+    :param model: the model to evaluate
+    :param data_loader: the data loader
+    :return: the number of correct predictions and the total number of predictions
+    """
     device = torch.device("cuda:0" if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     model.eval()
@@ -248,7 +270,14 @@ def evaluate(model, data_loader) -> tuple[int, int]:
     return correct_s, total_s
 
 
-def train(model, trunk, train_loader, val_loader):
+def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader):
+    """
+    Train the student model on the provided data loader with the aid of a teacher model
+    :param model: the trained student model
+    :param trunk: the teacher model
+    :param train_loader: the data loader for the training
+    :param val_loader: the data loader used to evaluate the student model
+    """
     device = torch.device("cuda:0" if torch.cuda.is_available() else 'cpu')
     model, trunk = model.to(device), trunk.to(device)
     optimizer = get_optimizer(params=model.parameters())
@@ -318,6 +347,8 @@ def sweep_train(sweep_id, args, config=None):
 
         args.candidate_number = config.candidate_number
         args.resnet_subtype = config.resnet_subtype
+        if config.candidate_number >= NUM_CANDIDATES[args.resnet_subtype]:
+            return
 
         Config.populate_sweep_config(sweep_config=config)
 
@@ -332,7 +363,7 @@ def run_sweep(args):
     }
     parameters_dict = {
         'candidate_number': {
-            'values': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            'values': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         },
         'resnet_subtype': {
             'values': ['resnetsmall', 'resnetlarge', 'resnetdebug']
@@ -341,7 +372,7 @@ def run_sweep(args):
             'values': [
                 {'value': 1.0, 'gamma': 1.0, 'milestone_fracs': [1.0]},
                 {'value': .3, 'gamma': 1.0, 'milestone_fracs': [0.5, 0.9]},
-                {'value': 4.0, 'gamma': 0.5, 'milestone_fracs': [0.5, .9]},
+                {'value': 4.0, 'gamma': 0.5, 'milestone_fracs': [0.5, .9]}
             ],
         },
         'lr_scheduler_milestone_fracs': {
@@ -367,7 +398,7 @@ def run_sweep(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=2)
-    parser.add_argument('--resnet-subtype', type=str, default='resnetsmall',
+    parser.add_argument('--resnet-subtype', type=str, default='resnetdebug',
                         choices=['resnetsmall', 'resnetlarge', 'resnetdebug'])
     parser.add_argument('--candidate-number',
                         type=int,
@@ -381,4 +412,5 @@ if __name__ == '__main__':
         run_sweep(args)
     else:
         logger('Starting a single train')
+        wandb.init(project="CMU-DISTILLATION", entity="emg_diff_priv", name=f'{args.resnet_subtype}')
         single_train(args)
