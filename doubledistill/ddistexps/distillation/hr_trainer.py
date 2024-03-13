@@ -363,7 +363,7 @@ def sweep_train(sweep_id, args, config=None):
 
         Config.populate_sweep_config(sweep_config=config)
 
-        wandb.run_name = f'{config.resnet_subtype}_candidate_{args.candidate_number}'
+        wandb.run.name = f'{config.resnet_subtype}_candidate_{args.candidate_number}'
 
         single_train(args)
 
