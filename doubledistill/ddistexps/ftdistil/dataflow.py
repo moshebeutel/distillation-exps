@@ -45,7 +45,7 @@ class CF10CTransforms(_TorchvisionTransforms):
                          transforms_dict=transforms_dict)
 
 
-@ray.remote(num_gpus=0)
+#@ray.remote(num_gpus=0)
 class AugDataFlow(DFC):
     EASY_C_SHIFTS = ['brightness', 'contrast', 'defocus_blur',
                      'elastic_transform', 'fog', 'frost', 'gaussian_blur']
