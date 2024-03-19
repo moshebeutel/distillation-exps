@@ -15,7 +15,7 @@ from tqdm import trange, tqdm
 from ddist.data import get_dataset
 from ddist.data.preprocessors import _TorchvisionTransforms
 from ddistexps.baseline.expcfg import get_candgen
-from ddistexps.ftdistil.dataflow import CF10CTransforms, AugDataFlow
+from ddistexps.ftdistil.dataflow2 import CF10CTransforms, AugDataFlow
 from ddistexps.teachers import ClipCIFAR10_args
 from torchvision import transforms
 import wandb
@@ -98,7 +98,8 @@ class DatasetFactory:
                                                              f' {DatasetFactory.DATASETS_HUB.keys()}.'
                                                              f' Got {dataset_name}')
 
-        torchvision_transforms: _TorchvisionTransforms = DatasetFactory.TRANSFORMS_HUB[dataset_name]().TRANSFORM_SHIFTS?
+        torchvision_transforms: _TorchvisionTransforms = DatasetFactory.TRANSFORMS_HUB[dataset_name]()
+        torchvision_transforms1: _TorchvisionTransforms = DatasetFactory.TRANSFORMS_SHIFTS[dataset_name]()
         dataset_ctor = DatasetFactory.DATASETS_HUB[dataset_name]
         dataset_dir = DatasetFactory.DATASETS_DIR + dataset_name
         dataset = dataset_ctor(
@@ -112,7 +113,7 @@ class DatasetFactory:
             root=dataset_dir,
             train=False,
             download=True,
-            transform=transforms.Compose([transforms.ToTensor(), torchvision_transforms.get_transform('val')])
+            transform=transforms.Compose([transforms.ToTensor(), torchvision_transforms1.get_transform('val')])
         )
         val_size = len(self._test_set)  # 10000
         train_size = len(dataset) - val_size
@@ -413,7 +414,6 @@ if __name__ == '__main__':
         logger('Starting sweep')
         api_key = 'de945abee07d10bd254a97ed0c746a9f80a818e5'
         wandb.login(key=api_key)
-        wandb.init(project="CMU-DISTILLATION", entity="ariel_solomon", name=f'{args.resnet_subtype}')
         run_sweep(args)
     else:
         logger('Starting a single train')
