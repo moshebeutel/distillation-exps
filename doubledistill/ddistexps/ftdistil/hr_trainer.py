@@ -10,21 +10,18 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10, CIFAR100
-from torchvision.transforms import transforms
+from torchvision import transforms
 from tqdm import trange, tqdm
 from ddist.data import get_dataset
 from ddist.data.preprocessors import _TorchvisionTransforms
 from ddistexps.baseline.expcfg import get_candgen
 from ddistexps.ftdistil.dataflow import CF10CTransforms
 from ddistexps.teachers import ClipCIFAR10_args
-from torchvision import transforms
 import wandb
-
-
 
 class Config:
     BATCH_SIZE: int = 32
-    EPOCHS: int = 25
+    EPOCHS: int = 2
     OPTIMIZER: str = "SGD"
     LEARNING_RATE: float = 0.1
     WEIGHT_DECAY: float = 5e-4
@@ -60,9 +57,7 @@ class Config:
         Config.LEARNING_RATE_SCHEDULER_FRACS = sweep_config.lr_scheduler_milestone_fracs
         Config.WEIGHT_DECAY = sweep_config.lr_weight_decay
 
-
 NUM_CANDIDATES = {'resnetsmall': 6, 'resnetlarge': 12, 'resnetdebug': 3}
-
 
 class LOG:
     def __init__(self):
@@ -78,82 +73,50 @@ class LOG:
             else:
                 wandb.log(kwargs)
 
-
 logger = LOG()
 EpochSummary = namedtuple('EpochSummary',
                           ['epoch', 'loss', 'distill_loss', 'xentropy_loss', 'ep_temperature', 'val_acc'])
-
-
-class CF10CTransforms2:
-    def __init__(self):
-        self.transforms_list = [
-            lambda img, brightness_factor=0.5: transforms.functional.adjust_brightness(img, brightness_factor=brightness_factor),
-            lambda img, contrast_factor=0.5: transforms.functional.adjust_contrast(img, contrast_factor=contrast_factor),
-            lambda img, saturation_factor=0.5: transforms.functional.adjust_saturation(img, saturation_factor=saturation_factor),
-            lambda img, hue_factor=0.5: transforms.functional.adjust_hue(img, hue_factor=hue_factor),
-            lambda img, gamma=0.5: transforms.functional.adjust_gamma(img, gamma=gamma),
-            transforms.functional.autocontrast,
-            transforms.functional.equalize,
-            transforms.functional.invert,
-            partial(transforms.functional.posterize, bits=4),
-            partial(transforms.functional.solarize, threshold=128),
-            partial(transforms.functional.adjust_sharpness, sharpness_factor=0.5),
-            partial(transforms.functional.rotate, degrees=15),
-            partial(transforms.functional.resized_crop, size=(32, 32), scale=(0.8, 1.0)),
-            partial(transforms.functional.resize, size=(32, 32)),
-            partial(transforms.functional.center_crop, size=(32, 32)),
-            partial(transforms.functional.gaussian_blur, kernel_size=3),
-            partial(transforms.functional.perspective, distortion_scale=0.5),
-            transforms.functional.to_grayscale,
-            transforms.functional.to_pil_image,
-            transforms.functional.to_tensor,
-            transforms.functional.normalize,
-            partial(transforms.functional.pad, padding=4)
-        ]
-
-    def get_transform(self, phase):
-        if phase == 'train':
-            return transforms.Compose([
-                transform if not isinstance(transform, partial) else transform for transform in self.transforms_list
-            ])
-        elif phase == 'val':
-            return transforms.Compose([
-                transforms.ToTensor()
-            ])
-        else:
-            raise ValueError(f"Unsupported phase: {phase}")
-
 class DatasetFactory:
     DATASETS_HUB = {'CIFAR10': CIFAR10, 'CIFAR100': CIFAR100}
     DATASETS_DIR = f"{str(Path.home())}/datasets/"
     NORMALIZATIONS = {'CIFAR10': transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
                       'CIFAR100': transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762))}
-    TRANSFORMS_HUB1 = {'CIFAR10': CF10CTransforms}
-    TRANSFORMS_HUB2 = {'CIFAR10': CF10CTransforms2}
-
+    TRANSFORMS_HUB = {'CIFAR10': CF10CTransforms}
 
     def __init__(self, dataset_name):
         assert dataset_name in DatasetFactory.DATASETS_HUB, (f'Expected dataset name one of'
                                                              f' {DatasetFactory.DATASETS_HUB.keys()}.'
                                                              f' Got {dataset_name}')
 
-        torchvision_transforms1 = DatasetFactory.TRANSFORMS_HUB1[dataset_name]()
-        torchvision_transforms2 = DatasetFactory.TRANSFORMS_HUB2[dataset_name]()
+        torchvision_transforms: _TorchvisionTransforms = DatasetFactory.TRANSFORMS_HUB[dataset_name]()
         dataset_ctor = DatasetFactory.DATASETS_HUB[dataset_name]
         dataset_dir = DatasetFactory.DATASETS_DIR + dataset_name
-        self.train_dataset = dataset_ctor(
+        dataset = dataset_ctor(
             root=dataset_dir,
             train=True,
             download=True,
-            transform=torchvision_transforms1.get_transform('train')
+            transform=transforms.Compose([transforms.ToTensor(), torchvision_transforms.get_transform('train')])
         )
 
-        self.val_dataset = dataset_ctor(
-            root=dataset_dir,
-            train=False,
-            download=True,
-            transform=torchvision_transforms2.get_transform('val')
-        )
+
+        train_size = len(dataset) - 10000
+
+        self.train_set,_ = torch.utils.data.random_split(dataset, [train_size, 10000])
+
+def get_val(trans_item,dataset_name=Config.DATASET_NAME):
+    DATASETS_HUB = {'CIFAR10': CIFAR10, 'CIFAR100': CIFAR100}
+    DATASETS_DIR = f"{str(Path.home())}/datasets/"
+    dataset_ctor = DatasetFactory.DATASETS_HUB[dataset_name]
+    dataset_dir = DatasetFactory.DATASETS_DIR + dataset_name
+    val_set = dataset_ctor(
+        root=dataset_dir,
+        train=False,
+        download=True,
+        transform=transforms.Compose([transforms.ToTensor(), trans_item])
+    )
+    val_size = len(val_set)  # 10000
+
+    return val_set
 
 def get_optimizer(params) -> optim.Optimizer:
     """
@@ -190,7 +153,6 @@ def get_tempr(epoch):
     while (i < len(tempr_milestones)) and (epoch >= tempr_milestones[i]):
         i += 1
     return Config.LOSS_TEMPERATURE_VALUE * (Config.LOSS_TEMPERATURE_GAMMA ** i)
-
 def distillation_loss(predlogits, tgtlogits, tempr):
     soft_tgt = F.softmax(tgtlogits / tempr, dim=-1)
 
@@ -201,7 +163,6 @@ def distillation_loss(predlogits, tgtlogits, tempr):
     approx_loss = torch.sum(soft_tgt * (soft_tgt.log() - soft_pred))  / soft_pred.size()[0]
     approx_loss = approx_loss * (tempr ** 2)
     return approx_loss
-
 
 def get_loss(distill_loss, cross_entropy_loss):
     return distill_loss * Config.LOSS_DISTILL_REG + cross_entropy_loss * Config.LOSS_XENTROPY_REG
@@ -230,7 +191,7 @@ def load_checkpoint(ptfile, model, map_location):
 
 def get_teacher():
     trunk = ClipCIFAR10_args()
-    logger(f'Teacher Model {trunk}')
+    # logger(f'Teacher Model {trunk}')
     return trunk
 
 def get_student_model(candidate_number: int) -> torch.nn.Module:
@@ -245,7 +206,7 @@ def get_student_model(candidate_number: int) -> torch.nn.Module:
         f"Expected candidate number < {len(grid)} for {Config.MODEL_NAME}, Got {candidate_number}"
     cand = grid[Config.STUDENT_CANDIDATE_NUM]
     student = cand['fn'](**cand['kwargs'])
-    logger(f'Student Model {student}')
+    # logger(f'Student Model {student}')
     return student
 
 def get_data_loaders() -> tuple[DataLoader, DataLoader]:
@@ -254,10 +215,12 @@ def get_data_loaders() -> tuple[DataLoader, DataLoader]:
     :return: tuple of the data loaders
     """
     ds_factory = DatasetFactory(dataset_name=Config.DATASET_NAME)
-    ds_train, ds_val = ds_factory.train_dataset, ds_factory.val_dataset
+    #ds_train, ds_val = ds_factory.train_set, val_set
+    ds_train = ds_factory.train_set
     train_loader = torch.utils.data.DataLoader(ds_train, batch_size=Config.BATCH_SIZE, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(ds_val, batch_size=Config.BATCH_SIZE, shuffle=False)
-    return train_loader, val_loader
+    #val_loader = torch.utils.data.DataLoader(ds_val, batch_size=Config.BATCH_SIZE, shuffle=False)
+    return train_loader#, val_loader
+
 
 def get_models() -> tuple[torch.nn.Module, torch.nn.Module]:
     """
@@ -266,6 +229,7 @@ def get_models() -> tuple[torch.nn.Module, torch.nn.Module]:
     student_model = get_student_model(Config.STUDENT_CANDIDATE_NUM)
     teacher_model = get_teacher()
     return student_model, teacher_model
+
 
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, data_loader: DataLoader) -> tuple[int, int]:
@@ -296,7 +260,7 @@ def evaluate(model: torch.nn.Module, data_loader: DataLoader) -> tuple[int, int]
 
     return correct_s, total_s
 
-def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader):
+def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoader, val_loader: DataLoader, ind):
     """
     Train the student model on the provided data loader with the aid of a teacher model
     :param model: the trained student model
@@ -346,7 +310,7 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
         if val_acc > best_acc:
             best_acc = val_acc
             save_checkpoint(round=epoch, val_acc=val_acc,
-                            out_dir=f'{Config.CHECKPOINTS_PATH}/{Config.MODEL_NAME}_student_{Config.STUDENT_CANDIDATE_NUM}',
+                            out_dir=f'{Config.CHECKPOINTS_PATH}/{Config.MODEL_NAME}_student_{Config.STUDENT_CANDIDATE_NUM}_val_ind{ind}',
                             state={'epoch': epoch, 'model_state_dict': model.state_dict(),
                                    'optimizer_state_dict': optimizer.state_dict(), 'val_acc': val_acc})
         epoch_summary = EpochSummary(epoch=epoch,
@@ -357,29 +321,59 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
                                      val_acc=val_acc)
         logger(epoch_summary=epoch_summary)
 
-def single_train(args):
+def single_train(args, val_loader, ind):
     logger(args)
     Config.populate_args(args)
 
     student_model, teacher_model = get_models()
-    train_loader, val_loader = get_data_loaders()
-    train(model=student_model, trunk=teacher_model, train_loader=train_loader, val_loader=val_loader)
+    train_loader = get_data_loaders()
+    train(model=student_model, trunk=teacher_model, train_loader=train_loader, val_loader=val_loader, ind=ind)
 
-def sweep_train(sweep_id, args, config=None):
-    with wandb.init(config=config):
-        config = wandb.config
-        config.update({'sweep_id': sweep_id})
+val_transforms_list = [
+    lambda img, brightness_factor=0.5: transforms.functional.adjust_brightness(img, brightness_factor=brightness_factor),
+    lambda img, contrast_factor=0.5: transforms.functional.adjust_contrast(img, contrast_factor=contrast_factor),
+    lambda img, saturation_factor=0.5: transforms.functional.adjust_saturation(img, saturation_factor=saturation_factor),
+    lambda img, hue_factor=0.5: transforms.functional.adjust_hue(img, hue_factor=hue_factor),
+    lambda img, gamma=0.5: transforms.functional.adjust_gamma(img, gamma=gamma),
+    transforms.functional.autocontrast,
+    transforms.functional.equalize,
+    transforms.functional.invert,
+    partial(transforms.functional.posterize, bits=4),
+    partial(transforms.functional.solarize, threshold=128),
+    partial(transforms.functional.adjust_sharpness, sharpness_factor=0.5),
+    partial(transforms.functional.rotate, degrees=15),
+    partial(transforms.functional.resized_crop, size=(32, 32), scale=(0.8, 1.0)),
+    partial(transforms.functional.resize, size=(32, 32)),
+    partial(transforms.functional.center_crop, size=(32, 32)),
+    partial(transforms.functional.gaussian_blur, kernel_size=3),
+    partial(transforms.functional.perspective, distortion_scale=0.5),
+    transforms.functional.to_grayscale,
+    transforms.functional.to_pil_image,
+    transforms.functional.to_tensor,
+    transforms.functional.normalize,
+    partial(transforms.functional.pad, padding=4)]
+def sweep_train(sweep_id, args,val_transforms_list, config=None):
 
-        args.candidate_number = config.candidate_number
-        args.resnet_subtype = config.resnet_subtype
-        if config.candidate_number >= NUM_CANDIDATES[args.resnet_subtype]:
-            return
+    for ind, trans in enumerate(val_transforms_list):
+        ds_val = get_val(trans,Config.DATASET_NAME)
+        val_loader = torch.utils.data.DataLoader(ds_val, batch_size=Config.BATCH_SIZE, shuffle=False)
 
-        Config.populate_sweep_config(sweep_config=config)
 
-        wandb.run.name = f'{config.resnet_subtype}_candidate_{args.candidate_number}'
+        with wandb.init(config=config):
+            config = wandb.config
+            config.update({'sweep_id': sweep_id})
 
-        single_train(args)
+            args.candidate_number = config.candidate_number
+            args.resnet_subtype = config.resnet_subtype
+            if config.candidate_number >= NUM_CANDIDATES[args.resnet_subtype]:
+                return
+
+            Config.populate_sweep_config(sweep_config=config)
+
+            wandb.run.name = f'{config.resnet_subtype}_candidate_{args.candidate_number}'
+
+            single_train(args, val_loader, ind)
+
 
 def run_sweep(args):
     sweep_config = {
@@ -390,8 +384,8 @@ def run_sweep(args):
             'values': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         },
         'resnet_subtype': {
-            'values': ['resnetsmall', 'resnetlarge']#, 'resnetdebug']
-            #'values': ['resnetdebug']
+            # 'values': ['resnetsmall', 'resnetlarge', 'resnetdebug']
+            'values': ['resnetdebug']
         },
         'loss_temperature_cfg': {
             'values': [
@@ -417,21 +411,20 @@ def run_sweep(args):
 
     sweep_id = wandb.sweep(sweep_config, project="CMU-DISTILLATION")
 
-    wandb.agent(sweep_id, partial(sweep_train, sweep_id=sweep_id, args=args))
+    wandb.agent(sweep_id, partial(sweep_train, sweep_id=sweep_id, args=args,val_transforms_list=val_transforms_list))
+
 
 if __name__ == '__main__':
-    # transform_names = ['brightness','contrast','gaussian_blur','pixelate','saturate','gaussian_noise','impulse_noise']
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=2)
-    parser.add_argument('--resnet-subtype', type=str, default=['resnetsmall', 'resnetlarge'],
+    parser.add_argument('--resnet-subtype', type=str, default='resnetdebug',
                         choices=['resnetsmall', 'resnetlarge', 'resnetdebug'])
     parser.add_argument('--candidate-number',
                         type=int,
                         default=1,
                         choices=[0, 1, 2, 3, 4, 5],
                         help='number of candidate grid entry')
-    parser.add_argument('--sweep', action='store_true',default=True, help='run a sweep. otherwise run single')
-    #parser.add_argument('--corruption', default = [help='run a sweep of fine tuning')
+    parser.add_argument('--sweep', action='store_true', default=True, help='run a sweep. otherwise run single')
     args = parser.parse_args()
     if args.sweep:
         logger('Starting sweep')
@@ -442,44 +435,5 @@ if __name__ == '__main__':
         logger('Starting a single train')
         api_key = 'de945abee07d10bd254a97ed0c746a9f80a818e5'
         wandb.login(key=api_key)
-        wandb.init(project="CMU-DISTILLATION", entity="ariel_solomon", name=f'{args.resnet_subtype}')
+        wandb.init(project="CMU-DISTILLATION", entity="emg_diff_priv", name=f'{args.resnet_subtype}')
         single_train(args)
-        # EASY_C_SHIFTS = ['brightness', 'contrast', 'defocus_blur', 'elastic_transform', 'fog', 'frost', 'gaussian_blur']
-        # MEDIUM_C_SHIFTS = ['jpeg_compression', 'motion_blur', 'pixelate', 'saturate', 'snow', 'spatter', 'speckle_noise', 'zoom_blur']
-        # HARD_C_SHIFTS = ['gaussian_noise', 'glass_blur', 'impulse_noise', 'shot_noise']
-        # INET_C_SHIFTS = ['brightness', 'contrast', 'elastic_transform', 'fog',
-        #                 'frost', 'jpeg_compression', 'pixelate', 'snow']
-        # import torch
-        # from torchvision import transforms
-        # from torchvision.datasets import CIFAR10
-        # import random  # For random transform selection and parameter adjustments
-        #
-        # def transform_cifar10(data_dir, transform_list, download=True):
-        #
-        #     transform = []
-        #     for transform_name in transform_list:
-        #         if transform_name == 'brightness':
-        #             transform.transforms.append(transforms.ColorJitter(brightness=random.uniform(0.5, 1.5)))
-        #         elif transform_name == 'contrast':
-        #             transform.transforms.append(transforms.ColorJitter(contrast=random.uniform(0.5, 1.5)))
-        #         elif transform_name == 'gaussian_blur':
-        #             transform.transforms.append(transforms.GaussianBlur(kernel_size=random.randint(3, 7), sigma=random.uniform(0.1, 2.0)))
-        #         elif transform_name == 'pixelate':
-        #             transform.transforms.append(transforms.Pixelate(pixel_size=random.randint(2, 8)))
-        #         elif transform_name == 'saturate':
-        #             transform.transforms.append(transforms.ColorJitter(saturation=random.uniform(0.5, 1.5)))
-        #         elif transform_name == 'gaussian_noise':
-        #             transform.transforms.append(transforms.GaussianNoise(mean=0.0, std=random.uniform(0.01, 0.1)))
-        #         elif transform_name == 'impulse_noise':
-        #             # Custom implementation (example)
-        #             def impulse_noise(img):
-        #                 noise_prop = random.uniform(0.01, 0.05)  # Proportion of pixels to modify
-        #                 return transforms.functional.random_noise(img, mode='pepper', p=noise_prop)
-        #             transform.transforms.append(impulse_noise)
-        #         else:
-        #             raise ValueError(f"Unsupported transformation: {transform_name}")
-        #
-        #     # Dataset loading
-        #     dataset = CIFAR10(root=data_dir, train=train, transform=transform, download=download)
-        #
-        #     return dataset
