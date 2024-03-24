@@ -11,17 +11,19 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10, CIFAR100
 from torchvision import transforms
+from torchvision.transforms import v2
 from tqdm import trange, tqdm
 from ddist.data import get_dataset
 from ddist.data.preprocessors import _TorchvisionTransforms
 from ddistexps.baseline.expcfg import get_candgen
 from ddistexps.ftdistil.dataflow import CF10CTransforms
 from ddistexps.teachers import ClipCIFAR10_args
+import random
 import wandb
 
 class Config:
     BATCH_SIZE: int = 32
-    EPOCHS: int = 2
+    EPOCHS: int = 25
     OPTIMIZER: str = "SGD"
     LEARNING_RATE: float = 0.1
     WEIGHT_DECAY: float = 5e-4
@@ -34,7 +36,7 @@ class Config:
     LOSS_TEMPERATURE_VALUE_FRACS: list[float] = [0.5, 0.9]
     LOSS_DISTILL_REG: float = 1.0
     LOSS_XENTROPY_REG: float = 1.0
-    MODEL_NAME: str = "resnetsmall"  # ['resnetsmall', 'resnetlarge', 'resnetdebug']
+    MODEL_NAME: str = ['resnetsmall', 'resnetlarge', 'resnetdebug']
     DATASET_NAME: str = "CIFAR10"  # ['CIFAR10', 'TinyCIFAR10', 'CIFAR100']
     STUDENT_CANDIDATE_NUM: int = 3  # [0,1,2,3,4,5]
     CHECKPOINTS_PATH: str = './checkpoints'
@@ -167,12 +169,12 @@ def distillation_loss(predlogits, tgtlogits, tempr):
 def get_loss(distill_loss, cross_entropy_loss):
     return distill_loss * Config.LOSS_DISTILL_REG + cross_entropy_loss * Config.LOSS_XENTROPY_REG
 
-def save_checkpoint(round, val_acc, state, out_dir):
+def save_checkpoint(round, val_acc, trunk_acc,temperature, state, out_dir):
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    cur = "ensemble-" + timestr + f"-{round}-val_acc_{val_acc}.pt"
+    cur = "ensemble-" + timestr + f"-{round}-val_acc_{val_acc}_{round}-trunk_acc_{trunk_acc}_temperature_{temperature}.pt"
     fname = os.path.join(out_dir, cur)
     # Save the current sate dict. TODO: Add random suffix
     assert not os.path.exists(fname), "Found existing checkpoint!"
@@ -279,6 +281,7 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
     best_acc = 0.0
     for epoch in range(Config.EPOCHS):
         temperature = get_tempr(epoch=epoch)
+        print('\nTemperature: ', temperature, '\n')
         tot_loss, tot_d_loss, tot_x_loss, batches = 0.0, 0.0, 0.0, 0
         model.train()
         pbar_batches = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
@@ -309,7 +312,7 @@ def train(model: torch.nn.Module, trunk: torch.nn.Module, train_loader: DataLoad
         val_acc = float(correct) / float(total) * 100.0
         if val_acc > best_acc:
             best_acc = val_acc
-            save_checkpoint(round=epoch, val_acc=val_acc,
+            save_checkpoint(round=epoch, val_acc=val_acc,trunk_acc=trunk_acc,temperature=temperature,
                             out_dir=f'{Config.CHECKPOINTS_PATH}/{Config.MODEL_NAME}_student_{Config.STUDENT_CANDIDATE_NUM}_val_ind{ind}',
                             state={'epoch': epoch, 'model_state_dict': model.state_dict(),
                                    'optimizer_state_dict': optimizer.state_dict(), 'val_acc': val_acc})
@@ -329,28 +332,31 @@ def single_train(args, val_loader, ind):
     train_loader = get_data_loaders()
     train(model=student_model, trunk=teacher_model, train_loader=train_loader, val_loader=val_loader, ind=ind)
 
+"""['brightness', 'contrast', 'defocus_blur',
+                     'elastic_transform', 'fog', 'frost', 'gaussian_blur']"""
+
 val_transforms_list = [
     lambda img, brightness_factor=0.5: transforms.functional.adjust_brightness(img, brightness_factor=brightness_factor),
     lambda img, contrast_factor=0.5: transforms.functional.adjust_contrast(img, contrast_factor=contrast_factor),
     lambda img, saturation_factor=0.5: transforms.functional.adjust_saturation(img, saturation_factor=saturation_factor),
     lambda img, hue_factor=0.5: transforms.functional.adjust_hue(img, hue_factor=hue_factor),
     lambda img, gamma=0.5: transforms.functional.adjust_gamma(img, gamma=gamma),
-    transforms.functional.autocontrast,
-    transforms.functional.equalize,
+    lambda img, autocontrast=v2.RandomAutocontrast(): transforms.functional.autocontrast(img),
+    #transforms.functional.equalize,
     transforms.functional.invert,
-    partial(transforms.functional.posterize, bits=4),
-    partial(transforms.functional.solarize, threshold=128),
+    #partial(transforms.functional.posterize, bits=4),
+    partial(transforms.functional.solarize, threshold=1),
     partial(transforms.functional.adjust_sharpness, sharpness_factor=0.5),
-    partial(transforms.functional.rotate, degrees=15),
-    partial(transforms.functional.resized_crop, size=(32, 32), scale=(0.8, 1.0)),
+    partial(transforms.functional.rotate, angle=15),
+    #partial(transforms.functional.resized_crop, size=(32, 32), scale=(0.8, 1.0)),
     partial(transforms.functional.resize, size=(32, 32)),
-    partial(transforms.functional.center_crop, size=(32, 32)),
+    partial(transforms.functional.center_crop, output_size=(32, 32)),
     partial(transforms.functional.gaussian_blur, kernel_size=3),
-    partial(transforms.functional.perspective, distortion_scale=0.5),
-    transforms.functional.to_grayscale,
-    transforms.functional.to_pil_image,
-    transforms.functional.to_tensor,
-    transforms.functional.normalize,
+    #partial(transforms.functional.perspective, distortion_scale=0.5),
+    #transforms.functional.to_grayscale,
+    #transforms.functional.to_pil_image,
+    #transforms.functional.to_tensor,
+    #transforms.functional.normalize,
     partial(transforms.functional.pad, padding=4)]
 def sweep_train(sweep_id, args,val_transforms_list, config=None):
 
@@ -384,8 +390,8 @@ def run_sweep(args):
             'values': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
         },
         'resnet_subtype': {
-            # 'values': ['resnetsmall', 'resnetlarge', 'resnetdebug']
-            'values': ['resnetdebug']
+            'values': ['resnetsmall', 'resnetlarge', 'resnetdebug']
+            #'values': ['resnetdebug']
         },
         'loss_temperature_cfg': {
             'values': [
@@ -416,7 +422,7 @@ def run_sweep(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=2)
+    parser.add_argument('--epochs', type=int, default=25)
     parser.add_argument('--resnet-subtype', type=str, default='resnetdebug',
                         choices=['resnetsmall', 'resnetlarge', 'resnetdebug'])
     parser.add_argument('--candidate-number',
