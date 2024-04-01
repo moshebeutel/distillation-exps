@@ -2,13 +2,13 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-root = '/home/user1/ariel/fed_learn/distillation-exps_Moshe/doubledistill/ddistexps/ftdistil/checkpoints_2epochs/'
+root = '/home/user1/ariel/fed_learn/distillation-exps_Moshe/doubledistill/ddistexps/ftdistil/checkpoints_several_temperatures_25epochs_temperature_4/'
 folds = [root+fold for fold in os.listdir(root)]
 ind = []
 model_names = ['resnetdebug', 'resnetsmall', 'resnetlarge']
 
 # Define keys for dictionaries
-dictionary_keys = ['val_acc', 't_acc','temperature','shifts']
+dictionary_keys = ['val_acc', 't_acc','temperature','shifts', 'cand']
 
 # Create dictionaries and assign to variables
 for var_name in model_names:
@@ -32,10 +32,13 @@ val_transforms_list = [
     'partial(transforms.functional.gaussian_blur, kernel_size=3)',
     'partial(transforms.functional.pad, padding=4)']
 
+# created dictionary for each ran model
+
 for fold in folds:
     if 'resnetdebug' in fold:
         pts = os.listdir(fold)
         index = fold.split('_ind')[-1]
+        cand = fold.split('student_')[1][0]
         shift = [transformed for transformed in shifts_names if transformed in val_transforms_list[int(index)]][0]
         val_acc = float(max([acc.split('-')[4].split('_')[:3][-1] for acc in pts]))
         val_acc = "{:.1f}".format(val_acc)
@@ -47,9 +50,11 @@ for fold in folds:
         resnetdebug['val_acc'].append(val_acc)
         resnetdebug['t_acc'].append(t_acc)
         resnetdebug['temperature'].append(temperature)
+        resnetdebug['cand'].append(cand)
     elif 'resnetsmall' in fold:
         pts = os.listdir(fold)
         index = fold.split('_ind')[-1]
+        cand = fold.split('student_')[1][0]
         shift = [transformed for transformed in shifts_names if transformed in val_transforms_list[int(index)]][0]
         val_acc = float(max([acc.split('-')[4].split('_')[:3][-1] for acc in pts]))
         val_acc = "{:.1f}".format(val_acc)
@@ -61,9 +66,11 @@ for fold in folds:
         resnetsmall['val_acc'].append(val_acc)
         resnetsmall['t_acc'].append(t_acc)
         resnetsmall['temperature'].append(temperature)
+        resnetsmall['cand'].append(cand)
     else:
         pts = os.listdir(fold)
         index = fold.split('_ind')[-1]
+        cand = fold.split('student_')[1][0]
         shift = [transformed for transformed in shifts_names if transformed in val_transforms_list[int(index)]][0]
         val_acc = float(max([acc.split('-')[4].split('_')[:3][-1] for acc in pts]))
         val_acc = "{:.1f}".format(val_acc)
@@ -75,17 +82,10 @@ for fold in folds:
         resnetlarge['val_acc'].append(val_acc)
         resnetlarge['t_acc'].append(t_acc)
         resnetlarge['temperature'].append(temperature)
+        resnetlarge['cand'].append(cand)
 
-
-# shifts = model_names[0]['shifts']
-# val_acc = model_names[0]['val_acc']
-# val_acc =[float(x) for x in val_acc]
-# t_acc = model_names[0]['t_acc']
-# t_acc =[float(x) for x in t_acc]
-
-
-# Sample data
-def plot_fig(resnetdebug,resnetsmall, resnetlarge):
+temp_range = [1,2,4]
+def plot_fig(resnetdebug,resnetsmall, resnetlarge, exp_name, temp_range):
 
 
     plt.figure(figsize=(10, 6))  # Set the figure size
@@ -93,12 +93,9 @@ def plot_fig(resnetdebug,resnetsmall, resnetlarge):
     plt.plot([float(num) for num in resnetdebug['val_acc']],marker ='.',markersize=6, color='r',label='resnetdebug-student_val')
     plt.plot([float(num) for num in resnetlarge['val_acc']],marker ='.',markersize=6, color='g',label='resnetlarge-student_val')
     plt.plot([float(num) for num in resnetsmall['t_acc']], marker='.', markersize=6, color='black', label='teacher-clip_val')
-    # plt.plot([float(num) for num in resnetdebug['t_acc']], marker='.', markersize=6, color='r', label='resnetdebug-clip_val')
-    # plt.plot([float(num) for num in resnetlarge['t_acc']], marker='.', markersize=6, color='g', label='resnetlarge-clip_val')
-
     plt.legend()
     # Set x-axis labels and rotation for better readability
-    plt.xticks(range(len(resnetsmall['shifts'])), resnetsmall['shifts'], rotation=45)  # Rotate x-axis labels for long strings
+    plt.xticks(range(len(resnetsmall['shifts'])), resnetsmall['shifts'], rotation=90)  # Rotate x-axis labels for long strings
 
     # Set axis labels and title
     plt.xlabel("Shifts")
@@ -106,8 +103,10 @@ def plot_fig(resnetdebug,resnetsmall, resnetlarge):
     plt.ylim(0, 100)
     plt.yticks(range(0, 101, 10))
     plt.grid(True)  # Add grid lines for better visualization
+    plt.title(f'Shifts after {exp_name}')
     plt.tight_layout()  # Adjust spacing between elements
-    plt.savefig('accuracies')
+    plt.savefig('accuracies_'+exp_name+'.png')
     plt.show()
-
-plot_fig(resnetdebug,resnetsmall, resnetlarge)
+#use the dictionaries to plot accucaries
+exp_name = '25_epochs_temperature_range_1_4'
+plot_fig(resnetdebug,resnetsmall, resnetlarge,exp_name)
